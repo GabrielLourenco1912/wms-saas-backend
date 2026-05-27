@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: wms-saas
+  threads:
+    virtual:
+      enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  mvc:
+    problemdetails:
+      enabled: false
+
+server:
+  port: 8080
