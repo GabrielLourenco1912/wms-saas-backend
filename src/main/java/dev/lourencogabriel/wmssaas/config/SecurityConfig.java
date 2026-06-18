@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -19,6 +20,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -51,7 +53,7 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
             .authorizeHttpRequests(auth -> auth
-                    .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()
+                    .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/refresh").permitAll()
                     .anyRequest().authenticated()
             )
 
@@ -66,9 +68,11 @@ public class SecurityConfig {
 
                     var body = Map.of(
                             "timestamp", LocalDateTime.now().toString(),
-                            "status", 401,
+                            "status", HttpStatus.UNAUTHORIZED,
                             "error", "Unauthorized",
-                            "message", "Acesso negado. Token ausente ou inválido."
+                            "message", (authException instanceof InvalidBearerTokenException)
+                                    ? "Token expirado ou inválido."
+                                    : "Autenticação necessária."
                     );
 
                     ObjectMapper mapper = new ObjectMapper();
@@ -77,6 +81,11 @@ public class SecurityConfig {
             );
 
         return http.build();
+    }
+
+    @Bean
+    SecretKey secretKey() {
+        return this.secretKey;
     }
 
     @Bean

@@ -1,10 +1,8 @@
 package dev.lourencogabriel.wmssaas.controller;
 
-import dev.lourencogabriel.wmssaas.dto.ApiResponse;
-import dev.lourencogabriel.wmssaas.dto.AuthResponse;
-import dev.lourencogabriel.wmssaas.dto.LoginRequest;
-import dev.lourencogabriel.wmssaas.dto.RegisterRequest;
+import dev.lourencogabriel.wmssaas.dto.*;
 import dev.lourencogabriel.wmssaas.service.AuthService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,9 +30,25 @@ public class AuthController {
     public ResponseEntity<ApiResponse<AuthResponse>> register(@RequestBody RegisterRequest registerRequest) {
         AuthResponse authResponse = this.authService.register(registerRequest);
 
-        ApiResponse<AuthResponse> apiResponse = new ApiResponse<>(authResponse, "Register and authentication Success");
+        ApiResponse<AuthResponse> apiResponse = new ApiResponse<>(authResponse, "Register and authentication Success", HttpStatus.CREATED);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(apiResponse);
     }
 
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResponse<AuthResponse>> refresh(@RequestBody RefreshRequest refreshRequest, HttpServletRequest request) {
+        String jwt = request.getHeader("Authorization");
+
+        if (jwt != null && jwt.startsWith("Bearer ")) {
+            jwt = jwt.substring(7);
+        } else {
+            throw new RuntimeException("Invalid access token in refresh route.");
+        }
+
+        AuthResponse authResponse = this.authService.refresh(refreshRequest, jwt);
+
+        ApiResponse<AuthResponse> apiResponse = new ApiResponse<>(authResponse, "Refresh Success");
+
+        return ResponseEntity.ok(apiResponse);
+    }
 }

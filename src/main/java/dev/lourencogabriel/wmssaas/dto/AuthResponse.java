@@ -9,16 +9,18 @@ public record AuthResponse(
     Instant issuedAt,
     Instant expiresAt,
     String subject,
-    String token
+    String token,
+    String refreshToken
 
 ) {
-    public AuthResponse(Jwt jwt) {
+    public AuthResponse(Jwt jwt, String refreshToken) {
         this(
                 jwt.getIssuer().toString(),
                 jwt.getIssuedAt(),
                 jwt.getExpiresAt(),
                 jwt.getSubject(),
-                jwt.getTokenValue()
+                jwt.getTokenValue(),
+                refreshToken
         );
     }
 }
