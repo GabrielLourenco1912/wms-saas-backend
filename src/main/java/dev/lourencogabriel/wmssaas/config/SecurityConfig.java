@@ -2,6 +2,7 @@ package dev.lourencogabriel.wmssaas.config;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import com.nimbusds.jose.proc.SecurityContext;
+import dev.lourencogabriel.wmssaas.dto.ApiResponse;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -29,9 +30,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
-import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 @Configuration
 @EnableWebSecurity
@@ -66,14 +65,10 @@ public class SecurityConfig {
                     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
 
-                    var body = Map.of(
-                            "timestamp", LocalDateTime.now().toString(),
-                            "status", HttpStatus.UNAUTHORIZED,
-                            "error", "Unauthorized",
-                            "message", (authException instanceof InvalidBearerTokenException)
-                                    ? "Token expirado ou inválido."
-                                    : "Autenticação necessária."
-                    );
+                    String message = (authException instanceof InvalidBearerTokenException)
+                            ? "Token expirado ou inválido."
+                            : "Autenticação necessária.";
+                    ApiResponse<Void> body = new ApiResponse<>(null, message, HttpStatus.UNAUTHORIZED);
 
                     ObjectMapper mapper = new ObjectMapper();
                     mapper.writeValue(response.getOutputStream(), body);

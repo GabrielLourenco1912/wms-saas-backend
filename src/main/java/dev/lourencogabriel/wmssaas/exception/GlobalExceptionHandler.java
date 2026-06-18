@@ -1,5 +1,6 @@
 package dev.lourencogabriel.wmssaas.exception;
 
+import dev.lourencogabriel.wmssaas.dto.ApiResponse;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.UnexpectedTypeException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -10,14 +11,13 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import java.time.LocalDateTime;
 import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Object> handleValidation(MethodArgumentNotValidException ex) {
+    public ResponseEntity<ApiResponse<Object>> handleValidation(MethodArgumentNotValidException ex) {
 
         var errors = ex.getBindingResult()
                 .getFieldErrors()
@@ -28,43 +28,21 @@ public class GlobalExceptionHandler {
                 ))
                 .toList();
 
-        return ResponseEntity.badRequest().body(
-                Map.of(
-                        "timestamp", LocalDateTime.now(),
-                        "status", 400,
-                        "error", "Validation Error",
-                        "errors", errors
-                )
-        );
+        return buildResponse(HttpStatus.BAD_REQUEST, "Validation Error", errors);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<Object> handleJsonError(HttpMessageNotReadableException ex) {
-        return ResponseEntity.badRequest().body(
-                Map.of(
-                        "timestamp", LocalDateTime.now(),
-                        "status", 400,
-                        "error", "Malformed JSON",
-                        "message", "Request body is invalid"
-                )
-        );
+    public ResponseEntity<ApiResponse<Object>> handleJsonError(HttpMessageNotReadableException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, "Request body is invalid");
     }
 
     @ExceptionHandler(UnexpectedTypeException.class)
-    public ResponseEntity<Object> handleValidationConfigError(UnexpectedTypeException ex) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                Map.of(
-                        "timestamp", LocalDateTime.now(),
-                        "status", 500,
-                        "error", "Validation Configuration Error",
-                        "message", "Invalid validation annotation usage",
-                        "details", ex.getMessage()
-                )
-        );
+    public ResponseEntity<ApiResponse<Object>> handleValidationConfigError(UnexpectedTypeException ex) {
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Invalid validation annotation usage", ex.getMessage());
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<Object> handleConstraint(ConstraintViolationException ex) {
+    public ResponseEntity<ApiResponse<Object>> handleConstraint(ConstraintViolationException ex) {
 
         var errors = ex.getConstraintViolations()
                 .stream()
@@ -74,61 +52,34 @@ public class GlobalExceptionHandler {
                 ))
                 .toList();
 
-        return ResponseEntity.badRequest().body(
-                Map.of(
-                        "timestamp", LocalDateTime.now(),
-                        "status", 400,
-                        "error", "Constraint Violation",
-                        "errors", errors
-                )
-        );
+        return buildResponse(HttpStatus.BAD_REQUEST, "Constraint Violation", errors);
     }
 
     @ExceptionHandler(EmailAlreadyInUseException.class)
-    public ResponseEntity<Object> handleEmailAlreadyInUse(EmailAlreadyInUseException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(
-                Map.of(
-                        "timestamp", LocalDateTime.now(),
-                        "status", 409,
-                        "error", "Email Already In Use",
-                        "message", ex.getMessage()
-                )
-        );
+    public ResponseEntity<ApiResponse<Object>> handleEmailAlreadyInUse(EmailAlreadyInUseException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<Object> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(
-                Map.of(
-                        "timestamp", LocalDateTime.now(),
-                        "status", 409,
-                        "error", "Data Integrity Violation",
-                        "message", "Request violates a database constraint"
-                )
-        );
+    public ResponseEntity<ApiResponse<Object>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        return buildResponse(HttpStatus.CONFLICT, "Request violates a database constraint");
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Object> handleGeneric(Exception ex) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                Map.of(
-                        "timestamp", LocalDateTime.now(),
-                        "status", 500,
-                        "error", "Internal Server Error",
-                        "message", ex.getMessage()
-                )
-        );
+    public ResponseEntity<ApiResponse<Object>> handleGeneric(Exception ex) {
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage());
     }
 
     @ExceptionHandler(Throwable.class)
-    public ResponseEntity<Object> handleGeneric(Throwable ex) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                Map.of(
-                        "timestamp", LocalDateTime.now(),
-                        "status", 500,
-                        "error", "Internal Server Error",
-                        "message", ex.getMessage()
-                )
-        );
+    public ResponseEntity<ApiResponse<Object>> handleGeneric(Throwable ex) {
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage());
+    }
+
+    private ResponseEntity<ApiResponse<Object>> buildResponse(HttpStatus status, String message) {
+        return buildResponse(status, message, null);
+    }
+
+    private ResponseEntity<ApiResponse<Object>> buildResponse(HttpStatus status, String message, Object data) {
+        return ResponseEntity.status(status).body(new ApiResponse<>(data, message, status));
     }
 }
