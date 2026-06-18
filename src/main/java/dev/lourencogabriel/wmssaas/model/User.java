@@ -1,16 +1,16 @@
 package dev.lourencogabriel.wmssaas.model;
 
-import com.github.f4b6a3.ulid.UlidCreator;
+import dev.lourencogabriel.wmssaas.annotation.GeneratedUlid;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
 import org.jspecify.annotations.NullMarked;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import jakarta.persistence.*;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 
@@ -19,10 +19,16 @@ import java.util.List;
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
-@Table(name = "users")
+@Table(
+    name = "users",
+    uniqueConstraints = {
+            @UniqueConstraint(name = "uk_users_email", columnNames = "email")
+    }
+)
 public class User implements UserDetails {
 
     @Id
+    @GeneratedUlid
     private String ulid;
 
     @NotNull
@@ -37,13 +43,13 @@ public class User implements UserDetails {
     @Column(nullable = false)
     private String password;
 
-    @NotNull
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime created_at;
+    @Column(name = "created_at",  nullable = false, updatable = false)
+    @CreationTimestamp
+    private Instant createdAt;
 
     @NotNull
-    @Column(nullable = false)
-    private LocalDateTime updated_at;
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
 
     public User(String name, String email, String password) {
         this.name = name;
@@ -90,12 +96,6 @@ public class User implements UserDetails {
 
     @PrePersist
     private void initAttributes() {
-        if (this.ulid == null) {
-            this.ulid = UlidCreator.getUlid().toString();
-        }
-        if(this.created_at == null) {
-            this.created_at = LocalDateTime.now();
-        }
-        this.updated_at = LocalDateTime.now();
+        this.updatedAt = Instant.now();
     }
 }
