@@ -1,14 +1,16 @@
 package dev.lourencogabriel.wmssaas.dto;
 
+import org.springframework.http.HttpStatus;
+
 import java.time.LocalDateTime;
 
 public record ApiResponse<T>(
         LocalDateTime timestamp,
-        int status,
+        HttpStatus status,
         String message,
         T data
 ) {
-    public ApiResponse(T data, String message, int status) {
+    public ApiResponse(T data, String message, HttpStatus status) {
         this(
                 LocalDateTime.now(),
                 status,
@@ -20,7 +22,7 @@ public record ApiResponse<T>(
     public ApiResponse(T data, String message) {
         this(
                 LocalDateTime.now(),
-                200,
+                HttpStatus.OK,
                 message,
                 data
         );
