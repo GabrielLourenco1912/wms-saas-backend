@@ -15,6 +15,7 @@ target/
 
 ### IntelliJ IDEA ###
 .idea
+.junie/
 *.iws
 *.iml
 *.ipr
@@ -31,3 +32,7 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Agents ###
+.agents/
+.codex/
