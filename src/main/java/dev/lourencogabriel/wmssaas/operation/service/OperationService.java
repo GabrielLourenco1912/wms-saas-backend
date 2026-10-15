@@ -9,12 +9,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -75,9 +76,25 @@ public class OperationService {
     private String hash(Object request) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(mapper.writeValueAsString(request).getBytes(StandardCharsets.UTF_8)));
+                    .digest(mapper.writeValueAsBytes(canonical(mapper.valueToTree(request)))));
         } catch (java.security.NoSuchAlgorithmException impossible) {
             throw new IllegalStateException(impossible);
         }
+    }
+
+    /** Object property order is irrelevant; array order and every scalar value remain significant. */
+    private JsonNode canonical(JsonNode node) {
+        if (node.isObject()) {
+            var sorted = mapper.createObjectNode();
+            node.properties().stream().sorted(Map.Entry.comparingByKey())
+                    .forEach(entry -> sorted.set(entry.getKey(), canonical(entry.getValue())));
+            return sorted;
+        }
+        if (node.isArray()) {
+            var array = mapper.createArrayNode();
+            node.forEach(element -> array.add(canonical(element)));
+            return array;
+        }
+        return node;
     }
 }
