@@ -57,7 +57,9 @@ As coleções abaixo oferecem listagem paginada por `GET`, criação por `POST`,
 | Produtos | `/api/products` | `PRODUCT_VIEW/CREATE/EDIT` |
 | Clientes e fornecedores | `/api/partners` | `ORDER_VIEW/CREATE/EDIT` |
 
-Embalagens usam `GET/POST /api/products/{productId}/packages` e `PUT /api/products/{productId}/packages/{packageId}`, com permissões de produto. A listagem de embalagens retorna uma lista, sem paginação. As listagens de zonas e posições aceitam os filtros `warehouseId` e `zoneId`, respectivamente.
+Embalagens usam `GET/POST /api/products/{productId}/packages` e `PUT /api/products/{productId}/packages/{packageId}`, com permissões de produto. Todas as coleções, incluindo embalagens, perfis e permissões, usam paginação com `page=0` e `size=20` por padrão; `size` aceita de 1 a 100. As linhas ficam em `data.content`.
+
+Cada recurso oferece pesquisa por `q` e filtros específicos na coleção e em `GET /api/search/{recurso}`. Dropdowns usam `GET /api/lookups/{recurso}`, com páginas de 5 itens e opções `{id, label}`. Os parâmetros, limites, filtros e exemplos estão em [docs/PAGINACAO_PESQUISA.md](docs/PAGINACAO_PESQUISA.md).
 
 Os requests e responses estão nos DTOs dos módulos `warehouse`, `product` e `partner`. Criações retornam HTTP **201**, consultas/edições **200**, dados inválidos **400**, recurso ausente **404** e violação de regra de negócio **422**. Conflitos de restrição do banco retornam **409**. A inativação usa `active: false` na edição, preservando os vínculos históricos.
 
@@ -70,7 +72,7 @@ As permissões são verificadas na política HTTP e nos métodos dos controllers
 ./ops/verify-backup.sh
 ```
 
-A suíte validada contém 315 testes aprovados, sem testes ignorados, incluindo dois testes MySQL/Testcontainers executados com Docker. Os testes de integração cobrem a matriz de autorização com JWTs assinados, mudanças de conta/perfil/permissões, códigos de uso único, bloqueio, recuperação, fluxo web/mobile, migrations iniciais, persistência operacional e operações reais das APIs de cadastro. Os testes de cadastros usam H2, controllers de produção e JWTs assinados, sem rotas de apoio. Os testes MySQL de rotação concorrente e de estoque/imutabilidade usam Testcontainers e são ignorados automaticamente quando Docker não está disponível. Para repetir a validação completa, é necessário acesso ao Docker. SMTP é substituído por um sender de teste nos testes que enviam e-mail; a entrega real depende da configuração do ambiente.
+A suíte validada contém 447 testes aprovados, sem testes ignorados, incluindo dois testes MySQL/Testcontainers executados com Docker. Os testes de integração cobrem a matriz de autorização com JWTs assinados, mudanças de conta/perfil/permissões, códigos de uso único, bloqueio, recuperação, fluxo web/mobile, migrations iniciais, persistência operacional e operações reais das APIs de cadastro. Também cobrem paginação, pesquisa, filtros combinados e dropdowns dos 25 recursos. Os testes de cadastros usam H2, controllers de produção e JWTs assinados, sem rotas de apoio. Os testes MySQL de rotação concorrente e de estoque/imutabilidade usam Testcontainers e são ignorados automaticamente quando Docker não está disponível. Para repetir a validação completa, é necessário acesso ao Docker. SMTP é substituído por um sender de teste nos testes que enviam e-mail; a entrega real depende da configuração do ambiente.
 
 ## Ambiente e contêineres
 

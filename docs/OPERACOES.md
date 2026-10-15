@@ -2,6 +2,8 @@
 
 Todas as rotas `/api` exigem `Authorization: Bearer <accessToken>`, salvo as rotas públicas de autenticação documentadas no README. Respostas usam `ApiResponse`; listas paginadas usam `data.content`, `page`, `size`, `totalElements` e `totalPages`. Datas de validade usam `YYYY-MM-DD`; eventos usam UTC. Quantidades são decimais com até seis casas, na unidade base do produto, exceto a conferência de recebimento que informa quantidade da embalagem escolhida.
 
+Todas as coleções aceitam `page` (inicial 0), `size` (padrão 20, máximo 100), `q` e filtros do recurso. `GET /api/search/{recurso}` compartilha a consulta da coleção; `GET /api/lookups/{recurso}` retorna opções `{id, label}` em páginas de 5 itens. Ver [contrato de paginação e pesquisa](PAGINACAO_PESQUISA.md) para filtros, exemplos e mudanças no formato de perfis, permissões e embalagens.
+
 ## Idempotência
 
 - Recebimento, putaway, estoque, transferências, compensações, cancelamento genérico de tarefas e inventário usam o header **`Idempotency-Key`**.

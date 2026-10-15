@@ -80,6 +80,26 @@ flowchart LR
 dentro do módulo quando necessárias, como ocorre em `auth`. Não criar uma camada
 genérica apenas para acomodar código que já tem um dono de negócio.
 
+## Consultas paginadas
+
+Listagens e pesquisas recebem `@Valid @ModelAttribute PageQuery`; dropdowns
+recebem `LookupQuery`. Esses contratos de `shared.api` validam `page`, `size`
+e `q`. A resposta usa `PageResponse<DTO>`; dropdowns usam
+`PageResponse<LookupOption>`. Os padrões são 20 e 5 itens, respectivamente.
+
+Cada controller declara a coleção e o alias `/api/search/{recurso}`, além de
+`/api/lookups/{recurso}`. O serviço do módulo compõe suas `Specification`s e
+consulta o repositório com `Pageable`, preservando filtros e restrições do
+domínio. `SearchSpecifications` compartilha apenas predicados genéricos de
+igualdade e pesquisa textual literal; campos e recursos permitidos continuam
+declarados no módulo. Não carregar todas as entidades para filtrar em Java.
+
+Ao criar um recurso, implementar os três contratos e registrar as rotas na
+política de autorização com a permissão de leitura correspondente. Preservar
+ordenação determinística e não fazer fetch de coleções JPA com paginação em
+memória. O contrato dos clientes e os filtros disponíveis estão em
+[PAGINACAO_PESQUISA.md](PAGINACAO_PESQUISA.md).
+
 ## Integração entre módulos
 
 O padrão observado em `inatback/main` permite consultar repositórios de outro
@@ -140,7 +160,7 @@ identifique a entidade nova e preencha seu identificador na própria instância.
 Migrations de desenvolvimento permanecem consolidadas em V1/V2. Nenhuma migration
 incremental foi acrescentada somente pela conclusão dos controllers/serviços.
 
-A suíte possui 315 testes aprovados e nenhum ignorado na validação com Docker,
+A suíte possui 447 testes aprovados e nenhum ignorado na validação com Docker,
 com API real, JWTs, H2 e dois testes MySQL. Foram verificadas disputa por saldo e
 demanda, imutabilidade SQL do livro/histórico, idempotência, rollback, inventário,
 retorno e compensação. Backup/restauração também foram executados e conferidos

@@ -139,4 +139,12 @@ Os itens abaixo apontam as operações do servidor. Menções a aplicativo, pain
 [migration-test]: ../src/test/java/dev/lourencogabriel/wmssaas/auth/authorization/WmsAuthenticationMigrationTest.java
 [token-concurrency-test]: ../src/test/java/dev/lourencogabriel/wmssaas/auth/service/TokenServiceConcurrencyIntegrationTest.java
 
-Validação executada: 315 testes aprovados, sem falhas, erros ou testes ignorados nos relatórios consolidados; testes MySQL foram executados com Docker e migrations administrativas separadas da conexão de aplicação. Backup/restauração validado pelo script real em contêiner descartável.
+As coleções também oferecem pesquisa paginada e dropdowns conforme
+[PAGINACAO_PESQUISA.md](PAGINACAO_PESQUISA.md).
+[PaginationSearchIntegrationTest](../src/test/java/dev/lourencogabriel/wmssaas/user/PaginationSearchIntegrationTest.java)
+verifica os contratos HTTP de todos os recursos, limites de página e tamanho,
+respostas compactas e permissões. Os testes de pesquisa dos módulos verificam
+resultados com filtros combinados, caracteres literais e escopo por armazém;
+o teste MySQL de saída também executa pesquisa e lookup pela API real.
+
+Validação executada: 447 testes aprovados, sem falhas, erros ou testes ignorados nos relatórios consolidados; testes MySQL foram executados com Docker e migrations administrativas separadas da conexão de aplicação. Backup/restauração validado pelo script real em contêiner descartável.

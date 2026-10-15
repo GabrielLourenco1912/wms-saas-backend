@@ -81,6 +81,12 @@ Os cadastros de categorias (`/api/categories`) usam `PRODUCT_VIEW/CREATE/EDIT`, 
 - `GET /api/profiles`, `GET /api/profiles/{code}` e `GET /api/permissions`: `PROFILE_VIEW`.
 - `PUT /api/profiles/{code}`: `PROFILE_EDIT`; recebe `name`, `active`, `permissions`.
 
+Listagens de usuários, perfis e permissões usam `data.content`, com `page=0` e
+`size=20` por padrão. As pesquisas `/api/search/users`, `/api/search/profiles` e
+`/api/search/permissions`, assim como seus dropdowns `/api/lookups/...`, mantêm
+as mesmas permissões de leitura. Dropdowns retornam `{id, label}` em páginas de
+5 itens. Filtros e limites estão em [PAGINACAO_PESQUISA.md](PAGINACAO_PESQUISA.md).
+
 Trocar e-mail exige nova verificação: uma conta com e-mail novo não pode ser marcada `ACTIVE` administrativamente. Mudanças de e-mail, perfil ou status incrementam `token_version`, revogam refresh tokens e invalidam códigos pendentes. Desativar um perfil também revoga as sessões de seus usuários; reativá-lo não restaura os tokens antigos. Alterar permissões de um perfil ativo é aplicado na requisição seguinte.
 
 O último gestor ativo não pode ser desativado ou rebaixado por uma edição administrativa. A operação usa bloqueio do perfil de gestor para serializar rebaixamentos concorrentes. O perfil `GESTOR` conserva acesso ativo e as seis permissões de administração de usuários/perfis. Contas são desativadas por status, sem endpoint de exclusão física, preservando referências para a auditoria futura.
