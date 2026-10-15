@@ -23,6 +23,12 @@ public interface PositionRepository extends JpaRepository<Position, String>, Jpa
 
     List<Position> findAllByZoneId(String zoneId);
 
+    boolean existsByZoneId(String zoneId);
+
+    boolean existsByCodeIgnoreCase(String code);
+
+    boolean existsByCodeIgnoreCaseAndIdNot(String code, String id);
+
     List<Position> findByZoneIdIn(Collection<String> zoneIds);
 
     boolean existsByZoneIdAndCode(String zoneId, String code);

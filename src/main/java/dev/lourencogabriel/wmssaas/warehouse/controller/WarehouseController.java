@@ -1,10 +1,12 @@
 package dev.lourencogabriel.wmssaas.warehouse.controller;
 
-import dev.lourencogabriel.wmssaas.warehouse.model.*;
-import dev.lourencogabriel.wmssaas.warehouse.dto.WarehouseDtos;
+import dev.lourencogabriel.wmssaas.shared.api.PageResponse;
+import dev.lourencogabriel.wmssaas.warehouse.dto.WarehouseDtos.*;
+import dev.lourencogabriel.wmssaas.warehouse.model.Position;
+import dev.lourencogabriel.wmssaas.warehouse.model.Warehouse;
+import dev.lourencogabriel.wmssaas.warehouse.model.Zone;
 import dev.lourencogabriel.wmssaas.warehouse.service.WarehouseService;
 import dev.lourencogabriel.wmssaas.web.dto.ApiResponse;
-import dev.lourencogabriel.wmssaas.shared.api.PageResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -20,49 +22,76 @@ public class WarehouseController {
 
     @GetMapping("/warehouses")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'WAREHOUSE_VIEW')")
-    public ApiResponse<?> warehouses(Pageable p) { return new ApiResponse<>(PageResponse.from(service.warehouses(p).map(WarehouseDtos.WarehouseResponse::from)),"Warehouse list"); }
+    public ApiResponse<PageResponse<WarehouseResponse>> warehouses(Pageable pageable) {
+        return new ApiResponse<>(PageResponse.from(service.warehouses(pageable).map(WarehouseResponse::from)), "Warehouse list");
+    }
 
     @GetMapping("/warehouses/{id}")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'WAREHOUSE_VIEW')")
-    public ApiResponse<?> getWarehouse(@PathVariable String id) { return new ApiResponse<>(WarehouseDtos.WarehouseResponse.from(service.get(Warehouse.class,id)),"Warehouse"); }
+    public ApiResponse<WarehouseResponse> getWarehouse(@PathVariable String id) {
+        return new ApiResponse<>(WarehouseResponse.from(service.get(Warehouse.class, id)), "Warehouse");
+    }
 
     @PostMapping("/warehouses")
+    @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'WAREHOUSE_CREATE')")
-    public ApiResponse<?> createWarehouse(@Valid @RequestBody WarehouseDtos.WarehouseRequest body) { return new ApiResponse<>(WarehouseDtos.WarehouseResponse.from(service.warehouse(null,body)),"Warehouse created",HttpStatus.CREATED); }
+    public ApiResponse<WarehouseResponse> createWarehouse(@Valid @RequestBody WarehouseRequest body) {
+        return new ApiResponse<>(WarehouseResponse.from(service.warehouse(null, body)), "Warehouse created", HttpStatus.CREATED);
+    }
 
     @PutMapping("/warehouses/{id}")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'WAREHOUSE_EDIT')")
-    public ApiResponse<?> updateWarehouse(@PathVariable String id,@Valid @RequestBody WarehouseDtos.WarehouseRequest body) { return new ApiResponse<>(WarehouseDtos.WarehouseResponse.from(service.warehouse(id,body)),"Warehouse updated"); }
+    public ApiResponse<WarehouseResponse> updateWarehouse(@PathVariable String id, @Valid @RequestBody WarehouseRequest body) {
+        return new ApiResponse<>(WarehouseResponse.from(service.warehouse(id, body)), "Warehouse updated");
+    }
 
     @GetMapping("/zones")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'WAREHOUSE_VIEW')")
-    public ApiResponse<?> zones(@RequestParam(required=false) String warehouseId, Pageable p) { return new ApiResponse<>(PageResponse.from(service.zones(warehouseId,p).map(WarehouseDtos.ZoneResponse::from)),"Zone list"); }
+    public ApiResponse<PageResponse<ZoneResponse>> zones(@RequestParam(required = false) String warehouseId, Pageable pageable) {
+        return new ApiResponse<>(PageResponse.from(service.zones(warehouseId, pageable).map(ZoneResponse::from)), "Zone list");
+    }
 
     @GetMapping("/zones/{id}")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'WAREHOUSE_VIEW')")
-    public ApiResponse<?> getZone(@PathVariable String id) { return new ApiResponse<>(WarehouseDtos.ZoneResponse.from(service.get(Zone.class,id)),"Zone"); }
+    public ApiResponse<ZoneResponse> getZone(@PathVariable String id) {
+        return new ApiResponse<>(ZoneResponse.from(service.get(Zone.class, id)), "Zone");
+    }
 
     @PostMapping("/zones")
+    @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'WAREHOUSE_CREATE')")
-    public ApiResponse<?> createZone(@Valid @RequestBody WarehouseDtos.ZoneRequest body) { return new ApiResponse<>(WarehouseDtos.ZoneResponse.from(service.zone(null,body)),"Zone created",HttpStatus.CREATED); }
+    public ApiResponse<ZoneResponse> createZone(@Valid @RequestBody ZoneRequest body) {
+        return new ApiResponse<>(ZoneResponse.from(service.zone(null, body)), "Zone created", HttpStatus.CREATED);
+    }
 
     @PutMapping("/zones/{id}")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'WAREHOUSE_EDIT')")
-    public ApiResponse<?> updateZone(@PathVariable String id,@Valid @RequestBody WarehouseDtos.ZoneRequest body) { return new ApiResponse<>(WarehouseDtos.ZoneResponse.from(service.zone(id,body)),"Zone updated"); }
+    public ApiResponse<ZoneResponse> updateZone(@PathVariable String id, @Valid @RequestBody ZoneRequest body) {
+        return new ApiResponse<>(ZoneResponse.from(service.zone(id, body)), "Zone updated");
+    }
 
     @GetMapping("/positions")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'WAREHOUSE_VIEW')")
-    public ApiResponse<?> positions(@RequestParam(required=false) String zoneId, Pageable p) { return new ApiResponse<>(PageResponse.from(service.positions(zoneId,p).map(WarehouseDtos.PositionResponse::from)),"Position list"); }
+    public ApiResponse<PageResponse<PositionResponse>> positions(@RequestParam(required = false) String zoneId, Pageable pageable) {
+        return new ApiResponse<>(PageResponse.from(service.positions(zoneId, pageable).map(PositionResponse::from)), "Position list");
+    }
 
     @GetMapping("/positions/{id}")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'WAREHOUSE_VIEW')")
-    public ApiResponse<?> getPosition(@PathVariable String id) { return new ApiResponse<>(WarehouseDtos.PositionResponse.from(service.get(Position.class,id)),"Position"); }
+    public ApiResponse<PositionResponse> getPosition(@PathVariable String id) {
+        return new ApiResponse<>(PositionResponse.from(service.get(Position.class, id)), "Position");
+    }
 
     @PostMapping("/positions")
+    @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'WAREHOUSE_CREATE')")
-    public ApiResponse<?> createPosition(@Valid @RequestBody WarehouseDtos.PositionRequest body) { return new ApiResponse<>(WarehouseDtos.PositionResponse.from(service.position(null,body)),"Position created",HttpStatus.CREATED); }
+    public ApiResponse<PositionResponse> createPosition(@Valid @RequestBody PositionRequest body) {
+        return new ApiResponse<>(PositionResponse.from(service.position(null, body)), "Position created", HttpStatus.CREATED);
+    }
 
     @PutMapping("/positions/{id}")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'WAREHOUSE_EDIT')")
-    public ApiResponse<?> updatePosition(@PathVariable String id,@Valid @RequestBody WarehouseDtos.PositionRequest body) { return new ApiResponse<>(WarehouseDtos.PositionResponse.from(service.position(id,body)),"Position updated"); }
+    public ApiResponse<PositionResponse> updatePosition(@PathVariable String id, @Valid @RequestBody PositionRequest body) {
+        return new ApiResponse<>(PositionResponse.from(service.position(id, body)), "Position updated");
+    }
 }

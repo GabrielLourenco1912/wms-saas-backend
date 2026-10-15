@@ -49,7 +49,7 @@ public class WarehouseService {
         Warehouse w=lock(Warehouse.class,r.warehouseId());active(w.getActive(),"Warehouse");
         Zone e=id==null?new Zone():lock(Zone.class,id);
         if(id!=null&&!r.warehouseId().equals(e.getWarehouseId())) {
-            require(positions.findAll().stream().noneMatch(x->id.equals(x.getZoneId())),"A zone with positions cannot change warehouse");
+            require(!positions.existsByZoneId(id),"A zone with positions cannot change warehouse");
         }
         e.setWarehouseId(w.getId());e.setName(r.name().trim());e.setControlType(normalized(r.controlType()));e.setActive(r.active());
         return zones.saveAndFlush(e);
@@ -60,8 +60,11 @@ public class WarehouseService {
         Zone z=get(Zone.class,r.zoneId());Warehouse w=lock(Warehouse.class,z.getWarehouseId());
         active(z.getActive(),"Zone");active(w.getActive(),"Warehouse");
         Position e=id==null?new Position():lock(Position.class,id);
-        require(positions.findAll().stream().noneMatch(x->!Objects.equals(x.getId(),id)&&r.code().trim().equalsIgnoreCase(x.getCode())),"Position code is already used");
-        List<Stock> balances=id==null?List.of():stocks.findAll().stream().filter(x->id.equals(x.getPositionId())).toList();
+        boolean duplicateCode = id == null
+                ? positions.existsByCodeIgnoreCase(r.code().trim())
+                : positions.existsByCodeIgnoreCaseAndIdNot(r.code().trim(), id);
+        require(!duplicateCode,"Position code is already used");
+        List<Stock> balances=id==null?List.of():stocks.findByPositionId(id);
         if(!balances.isEmpty())require(r.zoneId().equals(e.getZoneId()),"A referenced position cannot change zone");
         if(balances.stream().anyMatch(s->s.getQuantity().signum()>0))require(r.purpose().equals(e.getPurpose()),"An occupied position cannot change purpose");
         BigDecimal weight=BigDecimal.ZERO,volume=BigDecimal.ZERO;
