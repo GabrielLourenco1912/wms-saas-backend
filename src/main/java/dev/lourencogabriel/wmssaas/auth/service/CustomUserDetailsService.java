@@ -17,6 +17,10 @@ public class CustomUserDetailsService implements UserDetailsService {
     @Override
     @NullMarked
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        return repository.findByEmail(username);
+        UserDetails user = this.repository.findByEmail(username);
+        if (user == null) {
+            throw new UsernameNotFoundException("Invalid credentials");
+        }
+        return user;
     }
 }

@@ -5,7 +5,7 @@ import dev.lourencogabriel.wmssaas.auth.model.RefreshToken;
 import dev.lourencogabriel.wmssaas.auth.repository.RefreshTokenRepository;
 import dev.lourencogabriel.wmssaas.user.model.User;
 import dev.lourencogabriel.wmssaas.user.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,10 +20,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 
 @Service
-@RequiredArgsConstructor
 public class TokenService {
 
-    private static final String ISSUER = "https://api.wmssaas.com";
+    public static final String TOKEN_VERSION_CLAIM = "token_version";
+
     private static final int ACCESS_TOKEN_MINUTES = 15;
     private static final int REFRESH_TOKEN_DAYS = 30;
     private static final int REFRESH_TOKEN_BYTES = 32;
@@ -33,7 +33,20 @@ public class TokenService {
     private final JwtEncoder jwtEncoder;
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final String issuer;
     private final SecureRandom secureRandom = new SecureRandom();
+
+    public TokenService(
+            JwtEncoder jwtEncoder,
+            UserRepository userRepository,
+            RefreshTokenRepository refreshTokenRepository,
+            @Value("${api.security.jwt.issuer}") String issuer
+    ) {
+        this.jwtEncoder = jwtEncoder;
+        this.userRepository = userRepository;
+        this.refreshTokenRepository = refreshTokenRepository;
+        this.issuer = issuer;
+    }
 
     @Transactional
     public AuthResponse generateTokens(String subject) {
@@ -48,16 +61,20 @@ public class TokenService {
 
         User user = this.userRepository.findById(subject)
                 .orElseThrow(() -> new JwtException("Token subject is invalid"));
+        if (!user.hasActiveAccess()) {
+            throw new JwtException("An active account, verified email and active profile are required");
+        }
 
         Instant now = Instant.now();
 
         Instant expiration = now.plus(ACCESS_TOKEN_MINUTES, ChronoUnit.MINUTES);
 
         JwtClaimsSet claims = JwtClaimsSet.builder()
-                .issuer(ISSUER)
+                .issuer(this.issuer)
                 .issuedAt(now)
                 .expiresAt(expiration)
                 .subject(subject)
+                .claim(TOKEN_VERSION_CLAIM, valueOrZero(user.getTokenVersion()))
                 .build();
 
         JwsHeader jwsHeader = JwsHeader.with(() -> "HS256").build();
@@ -87,6 +104,12 @@ public class TokenService {
         this.revokeRefreshToken(currentRefreshToken, authResponse.refreshToken());
 
         return authResponse;
+    }
+
+    @Transactional
+    public void revokeRefreshToken(String refreshToken) {
+        RefreshToken currentRefreshToken = this.validateRefreshTokenForUpdate(refreshToken);
+        this.revokeRefreshToken(currentRefreshToken, null);
     }
 
     @Transactional(readOnly = true)
@@ -144,7 +167,11 @@ public class TokenService {
 
     private void revokeRefreshToken(RefreshToken refreshToken, String replacedByRefreshToken) {
         refreshToken.setRevokedAt(Instant.now());
-        refreshToken.setReplacedByToken(this.hashRefreshToken(replacedByRefreshToken));
+        refreshToken.setReplacedByToken(
+                StringUtils.hasText(replacedByRefreshToken)
+                        ? this.hashRefreshToken(replacedByRefreshToken)
+                        : null
+        );
 
         this.refreshTokenRepository.save(refreshToken);
     }
@@ -191,6 +218,10 @@ public class TokenService {
         }
 
         return normalizedValue.substring(0, maxLength);
+    }
+
+    private static long valueOrZero(Long value) {
+        return value == null ? 0L : value;
     }
 
     private record RefreshTokenValue(String token, String hash) {

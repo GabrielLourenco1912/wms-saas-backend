@@ -43,7 +43,7 @@ class AuthResponseFactoryTest {
                 () -> assertInstanceOf(AccessTokenResponse.class, body.data()),
                 () -> assertEquals("Authentication Success", body.message()),
                 () -> assertTrue(cookie.contains("refresh_token=refresh-token")),
-                () -> assertTrue(cookie.contains("Path=/api/auth/refresh")),
+                () -> assertTrue(cookie.contains("Path=/api/auth")),
                 () -> assertTrue(cookie.contains("Secure")),
                 () -> assertTrue(cookie.contains("HttpOnly")),
                 () -> assertTrue(cookie.contains("SameSite=Lax"))
@@ -92,11 +92,44 @@ class AuthResponseFactoryTest {
         );
     }
 
+    @Test
+    void shouldExpireRefreshTokenCookieOnWebLogout() {
+        AuthResponseFactory factory = new AuthResponseFactory(true);
+
+        ResponseEntity<ApiResponse<?>> response = factory.buildLogout(AuthClientType.WEB);
+
+        ApiResponse<?> body = response.getBody();
+        String cookie = response.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+
+        assertNotNull(body);
+        assertNotNull(cookie);
+        assertAll(
+                () -> assertEquals(HttpStatus.OK, response.getStatusCode()),
+                () -> assertEquals("Logout Success", body.message()),
+                () -> assertNull(body.data()),
+                () -> assertTrue(cookie.contains("refresh_token=")),
+                () -> assertTrue(cookie.contains("Path=/api/auth")),
+                () -> assertTrue(cookie.contains("Max-Age=0")),
+                () -> assertTrue(cookie.contains("Secure")),
+                () -> assertTrue(cookie.contains("HttpOnly")),
+                () -> assertTrue(cookie.contains("SameSite=Lax"))
+        );
+    }
+
+    @Test
+    void shouldNotSetCookieOnMobileLogout() {
+        AuthResponseFactory factory = new AuthResponseFactory(true);
+
+        ResponseEntity<ApiResponse<?>> response = factory.buildLogout(AuthClientType.MOBILE);
+
+        assertNull(response.getHeaders().getFirst(HttpHeaders.SET_COOKIE));
+    }
+
     private AuthResponse authResponse(Instant refreshTokenExpiresAt) {
         Instant issuedAt = Instant.now();
 
         return new AuthResponse(
-                "https://api.wmssaas.com",
+                "inat-ead-backend-test",
                 issuedAt,
                 issuedAt.plusSeconds(900),
                 "user-id",

@@ -4,6 +4,9 @@ import dev.lourencogabriel.wmssaas.auth.dto.AuthResponse;
 import dev.lourencogabriel.wmssaas.auth.model.RefreshToken;
 import dev.lourencogabriel.wmssaas.auth.repository.RefreshTokenRepository;
 import dev.lourencogabriel.wmssaas.user.model.User;
+import dev.lourencogabriel.wmssaas.user.repository.AccessProfileRepository;
+import dev.lourencogabriel.wmssaas.shared.model.UserAccountStatus;
+import java.time.Instant;
 import dev.lourencogabriel.wmssaas.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,6 +48,9 @@ class TokenServiceConcurrencyIntegrationTest {
             .withPassword("test");
 
     @Autowired
+    private AccessProfileRepository profileRepository;
+
+    @Autowired
     private TokenService tokenService;
 
     @Autowired
@@ -64,9 +70,11 @@ class TokenServiceConcurrencyIntegrationTest {
 
     @Test
     void shouldAllowOnlyOneRotationWhenSameRefreshTokenIsUsedConcurrently() throws Exception {
-        User user = this.userRepository.saveAndFlush(
-                new User("Concurrent User", USER_EMAIL, "encoded-password")
-        );
+        User user = new User("Concurrent User", USER_EMAIL, "encoded-password");
+        user.setStatus(UserAccountStatus.ACTIVE);
+        user.setEmailVerifiedAt(Instant.now());
+        user.setProfile(this.profileRepository.findById("OPERADOR").orElseThrow());
+        user = this.userRepository.saveAndFlush(user);
         AuthResponse initialTokens = this.tokenService.generateTokens(
                 user.getUlid(),
                 "initial-agent",

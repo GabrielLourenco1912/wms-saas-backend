@@ -1,19 +1,66 @@
 spring:
   application:
-    name: wms-saas
+    name: ${SPRING_APPLICATION_NAME:wms-saas}
   threads:
     virtual:
-      enabled: true
+      enabled: ${SPRING_THREADS_VIRTUAL_ENABLED:true}
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/wms_saas}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
   jpa:
+    open-in-view: ${SPRING_JPA_OPEN_IN_VIEW:false}
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}
+    show-sql: ${SPRING_JPA_SHOW_SQL:false}
+  flyway:
+    # Consolidated development baseline: use a new empty database; do not skip V1.
+    baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:false}
+    baseline-version: ${FLYWAY_BASELINE_VERSION:1}
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
-      hibernate:
-        format_sql: true
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:false}
+      mail.smtp.starttls.enable: ${MAIL_STARTTLS_ENABLED:false}
+      mail.smtp.connectiontimeout: ${MAIL_CONNECTION_TIMEOUT:5000}
+      mail.smtp.timeout: ${MAIL_READ_TIMEOUT:5000}
+      mail.smtp.writetimeout: ${MAIL_WRITE_TIMEOUT:5000}
+  freemarker:
+    template-loader-path: ${FREEMARKER_TEMPLATE_LOADER_PATH:classpath:/templates/}
+    suffix: ${FREEMARKER_SUFFIX:.ftlh}
+    charset: ${FREEMARKER_CHARSET:UTF-8}
+    check-template-location: ${FREEMARKER_CHECK_TEMPLATE_LOCATION:true}
   mvc:
     problemdetails:
-      enabled: false
+      enabled: ${SPRING_MVC_PROBLEMDETAILS_ENABLED:false}
 
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
+
+api:
+  mail:
+    from: ${MAIL_FROM:no-reply@wms.local}
+  security:
+    jwt:
+      secret: ${JWT_SECRET}
+      issuer: ${JWT_ISSUER:https://api.wmssaas.com}
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+    refresh-cookie:
+      secure: ${REFRESH_COOKIE_SECURE:true}
+    challenge:
+      ttl: ${AUTH_CHALLENGE_TTL:10m}
+      max-attempts: ${AUTH_CHALLENGE_MAX_ATTEMPTS:5}
+    account-lock:
+      max-failed-attempts: ${ACCOUNT_LOCK_MAX_FAILED_ATTEMPTS:5}
+      duration: ${ACCOUNT_LOCK_DURATION:15m}
+      unlock-interval: ${ACCOUNT_LOCK_UNLOCK_INTERVAL:60000}
+      scheduler-enabled: ${ACCOUNT_LOCK_SCHEDULER_ENABLED:true}
+    bootstrap:
+      enabled: ${WMS_BOOTSTRAP_ENABLED:false}
+      name: ${WMS_BOOTSTRAP_NAME:Gestor inicial}
+      email: ${WMS_BOOTSTRAP_EMAIL:}
+      password: ${WMS_BOOTSTRAP_PASSWORD:}

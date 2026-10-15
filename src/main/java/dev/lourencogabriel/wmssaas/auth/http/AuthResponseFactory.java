@@ -18,7 +18,7 @@ public class AuthResponseFactory {
 
     public static final String REFRESH_TOKEN_COOKIE = "refresh_token";
 
-    private static final String REFRESH_TOKEN_COOKIE_PATH = "/api/auth/refresh";
+    private static final String REFRESH_TOKEN_COOKIE_PATH = "/api/auth";
 
     private final boolean refreshCookieSecure;
 
@@ -46,6 +46,17 @@ public class AuthResponseFactory {
         return responseBuilder.body(apiResponse);
     }
 
+    public ResponseEntity<ApiResponse<?>> buildLogout(AuthClientType clientType) {
+        ApiResponse<?> apiResponse = new ApiResponse<>(null, "Logout Success", HttpStatus.OK);
+        ResponseEntity.BodyBuilder responseBuilder = ResponseEntity.ok();
+
+        if (clientType == AuthClientType.WEB) {
+            responseBuilder.header(HttpHeaders.SET_COOKIE, this.buildExpiredRefreshTokenCookie().toString());
+        }
+
+        return responseBuilder.body(apiResponse);
+    }
+
     private ResponseCookie buildRefreshTokenCookie(AuthResponse authResponse) {
         Duration maxAge = Duration.between(Instant.now(), authResponse.refreshTokenExpiresAt());
 
@@ -59,6 +70,16 @@ public class AuthResponseFactory {
                 .sameSite("Lax")
                 .path(REFRESH_TOKEN_COOKIE_PATH)
                 .maxAge(maxAge)
+                .build();
+    }
+
+    private ResponseCookie buildExpiredRefreshTokenCookie() {
+        return ResponseCookie.from(REFRESH_TOKEN_COOKIE, "")
+                .httpOnly(true)
+                .secure(this.refreshCookieSecure)
+                .sameSite("Lax")
+                .path(REFRESH_TOKEN_COOKIE_PATH)
+                .maxAge(Duration.ZERO)
                 .build();
     }
 }

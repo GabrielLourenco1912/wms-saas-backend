@@ -1,174 +1,117 @@
 package dev.lourencogabriel.wmssaas.auth.service;
 
-import dev.lourencogabriel.wmssaas.auth.dto.AuthResponse;
 import dev.lourencogabriel.wmssaas.auth.dto.RegisterRequest;
+import dev.lourencogabriel.wmssaas.auth.model.AuthChallengePurpose;
+import dev.lourencogabriel.wmssaas.shared.model.UserAccountStatus;
 import dev.lourencogabriel.wmssaas.user.exception.EmailAlreadyInUseException;
+import dev.lourencogabriel.wmssaas.user.model.AccessProfile;
 import dev.lourencogabriel.wmssaas.user.model.User;
+import dev.lourencogabriel.wmssaas.user.repository.AccessProfileRepository;
 import dev.lourencogabriel.wmssaas.user.repository.UserRepository;
+import dev.lourencogabriel.wmssaas.web.exception.BusinessRuleException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
+import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
-
-    private static final String USER_ID = "01JTESTUSER0000000000000000";
-
-    @Mock
-    private UserRepository userRepository;
-
-    @Mock
-    private PasswordEncoder passwordEncoder;
-
-    @Mock
-    private AuthenticationManager authenticationManager;
-
-    @Mock
-    private TokenService tokenService;
-
-    private AuthService authService;
+    @Mock UserRepository users;
+    @Mock PasswordEncoder encoder;
+    @Mock AuthenticationManager manager;
+    @Mock TokenService tokens;
+    @Mock AuthChallengeService challenges;
+    @Mock AccountSecurityService security;
+    @Mock AccessProfileRepository profiles;
+    AuthService service;
 
     @BeforeEach
     void setUp() {
-        this.authService = new AuthService(
-                this.userRepository,
-                this.passwordEncoder,
-                this.authenticationManager,
-                this.tokenService
-        );
+        this.service = new AuthService(users, encoder, manager, tokens, challenges, security, profiles);
     }
 
     @Test
-    void shouldAuthenticateAndGenerateTokensForAuthenticatedUser() {
-        User user = this.user();
-        Authentication authentication = mock(Authentication.class);
-        AuthResponse expectedResponse = this.authResponse();
-        when(authentication.getPrincipal()).thenReturn(user);
-        when(this.authenticationManager.authenticate(any())).thenReturn(authentication);
-        when(this.tokenService.generateTokens(USER_ID, "agent", "203.0.113.10"))
-                .thenReturn(expectedResponse);
-
-        AuthResponse response = this.authService.authenticate(
-                "test@example.com",
-                "plain-password",
-                "agent",
-                "203.0.113.10"
-        );
-
-        ArgumentCaptor<UsernamePasswordAuthenticationToken> authenticationCaptor =
-                ArgumentCaptor.forClass(UsernamePasswordAuthenticationToken.class);
-        verify(this.authenticationManager).authenticate(authenticationCaptor.capture());
-
-        assertAll(
-                () -> assertSame(expectedResponse, response),
-                () -> assertEquals("test@example.com", authenticationCaptor.getValue().getPrincipal()),
-                () -> assertEquals("plain-password", authenticationCaptor.getValue().getCredentials())
-        );
+    void shouldNormalizeCredentialsAndRequireEmailVerificationBeforeTokens() {
+        User user = new User("User", "user@example.com", "hash");
+        when(manager.authenticate(any())).thenReturn(new UsernamePasswordAuthenticationToken(user, null));
+        service.authenticate(" USER@EXAMPLE.COM ", "password", "agent", "203.0.113.1");
+        verify(manager).authenticate(argThat(a -> "user@example.com".equals(a.getName())));
+        verify(challenges).issue(user, AuthChallengePurpose.EMAIL_VERIFICATION, "agent", "203.0.113.1");
+        verifyNoInteractions(tokens);
     }
 
     @Test
-    void shouldRegisterUserWithEncodedPasswordAndGenerateTokens() {
-        RegisterRequest request = new RegisterRequest("Test User", "test@example.com", "plain-password");
-        AuthResponse expectedResponse = this.authResponse();
-        when(this.userRepository.existsByEmail(request.email())).thenReturn(false);
-        when(this.passwordEncoder.encode(request.password())).thenReturn("encoded-password");
-        when(this.userRepository.save(any(User.class))).thenAnswer(invocation -> {
-            User savedUser = invocation.getArgument(0);
-            savedUser.setUlid(USER_ID);
-            return savedUser;
-        });
-        when(this.tokenService.generateTokens(USER_ID, "agent", "203.0.113.10"))
-                .thenReturn(expectedResponse);
-
-        AuthResponse response = this.authService.register(
-                request,
-                "agent",
-                "203.0.113.10"
-        );
-
-        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(this.userRepository).save(userCaptor.capture());
-
-        assertAll(
-                () -> assertSame(expectedResponse, response),
-                () -> assertEquals(request.name(), userCaptor.getValue().getName()),
-                () -> assertEquals(request.email(), userCaptor.getValue().getEmail()),
-                () -> assertEquals("encoded-password", userCaptor.getValue().getPassword())
-        );
+    void shouldRequireMfaForVerifiedAccounts() {
+        User user = new User("User", "user@example.com", "hash");
+        user.setEmailVerifiedAt(Instant.now());
+        when(manager.authenticate(any())).thenReturn(new UsernamePasswordAuthenticationToken(user, null));
+        service.authenticate("user@example.com", "password");
+        verify(challenges).issue(user, AuthChallengePurpose.MFA_LOGIN, null, null);
+        verifyNoInteractions(tokens);
     }
 
     @Test
-    void shouldRejectRegistrationWhenEmailIsAlreadyInUse() {
-        RegisterRequest request = new RegisterRequest("Test User", "test@example.com", "plain-password");
-        when(this.userRepository.existsByEmail(request.email())).thenReturn(true);
-
-        EmailAlreadyInUseException exception = assertThrows(
-                EmailAlreadyInUseException.class,
-                () -> this.authService.register(request, null, null)
-        );
-
-        assertTrue(exception.getMessage().contains(request.email()));
-        verify(this.userRepository, never()).save(any());
-        verifyNoInteractions(this.passwordEncoder, this.tokenService);
+    void shouldRecordFailedCredentials() {
+        when(manager.authenticate(any())).thenThrow(new BadCredentialsException("Invalid credentials"));
+        assertThrows(BadCredentialsException.class, () -> service.authenticate(" USER@EXAMPLE.COM ", "wrong"));
+        verify(security).recordFailedAuthentication("user@example.com");
+        verifyNoInteractions(tokens, challenges);
     }
 
     @Test
-    void shouldRejectBlankRefreshTokenBeforeDelegating() {
-        JwtException exception = assertThrows(
-                JwtException.class,
-                () -> this.authService.refresh(" ", null, null)
-        );
-
-        assertEquals("Refresh token is required", exception.getMessage());
-        verifyNoInteractions(this.tokenService);
+    void shouldCreateAnInvitedUserWithAnExplicitProfile() {
+        var profile = new AccessProfile("OPERADOR", "Operador", Set.of());
+        when(profiles.findByCodeForUpdate("OPERADOR")).thenReturn(Optional.of(profile));
+        when(encoder.encode("password-123")).thenReturn("bcrypt-hash");
+        when(users.save(any())).thenAnswer(call -> call.getArgument(0));
+        service.register(new RegisterRequest(" New user ", " USER@EXAMPLE.COM ", "password-123", "OPERADOR"));
+        verify(challenges).issue(argThat(user -> user.getProfile() == profile
+                        && user.getStatus() == UserAccountStatus.INVITED
+                        && "user@example.com".equals(user.getEmail()) && "New user".equals(user.getName())
+                        && "bcrypt-hash".equals(user.getPassword())),
+                eq(AuthChallengePurpose.EMAIL_VERIFICATION), isNull(), isNull());
+        verifyNoInteractions(tokens);
     }
 
     @Test
-    void shouldDelegateValidRefreshTokenRotation() {
-        AuthResponse expectedResponse = this.authResponse();
-        when(this.tokenService.refreshTokens("refresh-token", "agent", "203.0.113.10"))
-                .thenReturn(expectedResponse);
-
-        AuthResponse response = this.authService.refresh(
-                "refresh-token",
-                "agent",
-                "203.0.113.10"
-        );
-
-        assertSame(expectedResponse, response);
+    void shouldRejectDuplicateEmailAndInactiveProfiles() {
+        var request = new RegisterRequest("User", "user@example.com", "password-123", "OPERADOR");
+        when(users.existsByEmail(request.email())).thenReturn(true);
+        assertThrows(EmailAlreadyInUseException.class, () -> service.register(request));
+        when(users.existsByEmail(request.email())).thenReturn(false);
+        var profile = new AccessProfile("OPERADOR", "Operador", Set.of());
+        profile.setActive(false);
+        when(profiles.findByCodeForUpdate("OPERADOR")).thenReturn(Optional.of(profile));
+        assertThrows(BusinessRuleException.class, () -> service.register(request));
+        verify(users, never()).save(any());
+        verifyNoInteractions(encoder, tokens, challenges);
     }
 
-    private User user() {
-        User user = new User("Test User", "test@example.com", "encoded-password");
-        user.setUlid(USER_ID);
-        return user;
+    @Test
+    void shouldRejectBlankRefreshTokens() {
+        assertThrows(JwtException.class, () -> service.refresh(" ", null, null));
+        verifyNoInteractions(tokens);
     }
 
-    private AuthResponse authResponse() {
-        Instant now = Instant.now();
-        return new AuthResponse(
-                "https://api.wmssaas.com",
-                now,
-                now.plusSeconds(900),
-                USER_ID,
-                "access-token",
-                "refresh-token",
-                now.plus(30, ChronoUnit.DAYS)
-        );
+    @Test
+    void shouldDelegateRefreshAndLogout() {
+        service.refresh("refresh", "agent", "ip");
+        service.logout("refresh");
+        verify(tokens).refreshTokens("refresh", "agent", "ip");
+        verify(tokens).revokeRefreshToken("refresh");
     }
 }

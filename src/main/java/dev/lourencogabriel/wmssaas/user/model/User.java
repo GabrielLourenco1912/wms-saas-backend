@@ -1,55 +1,77 @@
 package dev.lourencogabriel.wmssaas.user.model;
 
+import dev.lourencogabriel.wmssaas.shared.model.UserAccountStatus;
 import dev.lourencogabriel.wmssaas.shared.persistence.GeneratedUlid;
-import jakarta.validation.constraints.NotNull;
-import lombok.*;
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 import org.jspecify.annotations.NullMarked;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
-import jakarta.persistence.*;
 
 import java.time.Instant;
 import java.util.Collection;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
+@Table(name = "users", uniqueConstraints = @UniqueConstraint(name = "uk_users_email", columnNames = "email"))
 @Getter
 @Setter
-@AllArgsConstructor
 @NoArgsConstructor
-@Table(
-    name = "users",
-    uniqueConstraints = {
-            @UniqueConstraint(name = "uk_users_email", columnNames = "email")
-    }
-)
 public class User implements UserDetails {
-
     @Id
     @GeneratedUlid
+    @Column(length = 26, nullable = false, updatable = false)
     private String ulid;
 
-    @NotNull
-    @Column(nullable = false)
+    @Column(length = 150, nullable = false)
     private String name;
 
-    @NotNull
-    @Column(nullable = false)
+    @Column(length = 254, nullable = false)
     private String email;
 
-    @NotNull
     @Column(nullable = false)
     private String password;
 
-    @Column(name = "created_at",  nullable = false, updatable = false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "profile_code", nullable = false)
+    private AccessProfile profile;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20, nullable = false)
+    private UserAccountStatus status = UserAccountStatus.INVITED;
+
+    @Column(name = "failed_authentication_attempts", nullable = false)
+    private Integer failedAuthenticationAttempts = 0;
+
+    @Column(name = "locked_until")
+    private Instant lockedUntil;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status_before_lock", length = 20)
+    private UserAccountStatus statusBeforeLock;
+
+    @Column(name = "token_version", nullable = false)
+    private Long tokenVersion = 0L;
+
     @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
-    @NotNull
+    @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    @Column(name = "last_login_at")
+    private Instant lastLoginAt;
+
+    @Column(name = "email_verified_at")
+    private Instant emailVerifiedAt;
 
     public User(String name, String email, String password) {
         this.name = name;
@@ -60,12 +82,14 @@ public class User implements UserDetails {
     @NullMarked
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority("ROLE_USER"));
-    }
-
-    @Override
-    public String getPassword() {
-        return this.password;
+        if (this.profile == null || !this.profile.isActive()) {
+            return Set.of();
+        }
+        Set<GrantedAuthority> authorities = new HashSet<>();
+        authorities.add(new SimpleGrantedAuthority("ROLE_" + this.profile.getCode()));
+        this.profile.getPermissions().forEach(permission ->
+                authorities.add(new SimpleGrantedAuthority(permission.authority())));
+        return Set.copyOf(authorities);
     }
 
     @NullMarked
@@ -74,28 +98,19 @@ public class User implements UserDetails {
         return this.email;
     }
 
-//    @Override
-//    public boolean isAccountNonExpired() {
-//        return true;
-//    }
+    @Override
+    public boolean isAccountNonLocked() {
+        return this.status != UserAccountStatus.LOCKED;
+    }
 
-//    @Override
-//    public boolean isAccountNonLocked() {
-//        return true;
-//    }
+    @Override
+    public boolean isEnabled() {
+        return (this.status == UserAccountStatus.ACTIVE || this.status == UserAccountStatus.INVITED)
+                && this.profile != null && this.profile.isActive();
+    }
 
-//    @Override
-//    public boolean isCredentialsNonExpired() {
-//        return true;
-//    }
-
-//    @Override
-//    public boolean isEnabled() {
-//        return true;
-//    }
-
-    @PrePersist
-    private void initAttributes() {
-        this.updatedAt = Instant.now();
+    public boolean hasActiveAccess() {
+        return this.status == UserAccountStatus.ACTIVE && this.emailVerifiedAt != null
+                && this.profile != null && this.profile.isActive();
     }
 }

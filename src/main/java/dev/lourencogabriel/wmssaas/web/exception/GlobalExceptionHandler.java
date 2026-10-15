@@ -1,6 +1,10 @@
 package dev.lourencogabriel.wmssaas.web.exception;
 
 import dev.lourencogabriel.wmssaas.user.exception.EmailAlreadyInUseException;
+import dev.lourencogabriel.wmssaas.auth.exception.InvalidAuthChallengeException;
+import dev.lourencogabriel.wmssaas.auth.exception.PasswordResetUnavailableException;
+import dev.lourencogabriel.wmssaas.mail.EmailDeliveryException;
+import org.springframework.security.access.AccessDeniedException;
 import dev.lourencogabriel.wmssaas.web.dto.ApiResponse;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.UnexpectedTypeException;
@@ -14,11 +18,48 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Object>> handleAccessDenied(AccessDeniedException ex) {
+        return buildResponse(HttpStatus.FORBIDDEN, "Seu perfil não permite esta operação.");
+    }
+
+    @ExceptionHandler(InvalidAuthChallengeException.class)
+    public ResponseEntity<ApiResponse<Object>> handleChallenge(InvalidAuthChallengeException ex) {
+        return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage());
+    }
+
+    @ExceptionHandler(PasswordResetUnavailableException.class)
+    public ResponseEntity<ApiResponse<Object>> handleReset(PasswordResetUnavailableException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(BusinessRuleException.class)
+    public ResponseEntity<ApiResponse<Object>> handleBusinessRule(BusinessRuleException ex) {
+        return buildResponse(HttpStatus.UNPROCESSABLE_CONTENT, ex.getMessage());
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ApiResponse<Object>> handleNotFound(ResourceNotFoundException ex) {
+        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler({NoHandlerFoundException.class, NoResourceFoundException.class})
+    public ResponseEntity<ApiResponse<Object>> handleMissingEndpoint(Exception ex) {
+        return buildResponse(HttpStatus.NOT_FOUND, "Endpoint is unavailable");
+    }
+
+    @ExceptionHandler(EmailDeliveryException.class)
+    public ResponseEntity<ApiResponse<Object>> handleEmail(EmailDeliveryException ex) {
+        return buildResponse(HttpStatus.SERVICE_UNAVAILABLE, "Authentication email could not be sent");
+    }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Object>> handleValidation(MethodArgumentNotValidException ex) {
@@ -94,12 +135,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Object>> handleGeneric(Exception ex) {
-        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage());
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected server error");
     }
 
     @ExceptionHandler(Throwable.class)
     public ResponseEntity<ApiResponse<Object>> handleGeneric(Throwable ex) {
-        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage());
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected server error");
     }
 
     private ResponseEntity<ApiResponse<Object>> buildResponse(HttpStatus status, String message) {

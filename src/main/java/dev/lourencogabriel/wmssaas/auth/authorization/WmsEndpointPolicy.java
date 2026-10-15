@@ -1,0 +1,96 @@
+package dev.lourencogabriel.wmssaas.auth.authorization;
+
+import org.springframework.http.HttpMethod;
+
+import java.util.List;
+
+import static dev.lourencogabriel.wmssaas.auth.authorization.WmsPermission.*;
+import static org.springframework.http.HttpMethod.*;
+
+/** API contracts for WMS modules; business implementations are separate from access control. */
+public final class WmsEndpointPolicy {
+    private WmsEndpointPolicy() {}
+
+    public record Rule(HttpMethod method, String pattern, WmsPermission permission) {}
+
+    public static final List<Rule> RULES = List.of(
+            new Rule(GET, "/api/users", USER_VIEW),
+            new Rule(GET, "/api/users/{id}", USER_VIEW),
+            new Rule(POST, "/api/users", USER_CREATE),
+            new Rule(POST, "/api/auth/register", USER_CREATE),
+            new Rule(PUT, "/api/users/{id}", USER_EDIT),
+            new Rule(GET, "/api/profiles", PROFILE_VIEW),
+            new Rule(GET, "/api/profiles/{code}", PROFILE_VIEW),
+            new Rule(GET, "/api/permissions", PROFILE_VIEW),
+            new Rule(PUT, "/api/profiles/{code}", PROFILE_EDIT),
+            new Rule(GET, "/api/warehouses", WAREHOUSE_VIEW),
+            new Rule(GET, "/api/warehouses/{id}", WAREHOUSE_VIEW),
+            new Rule(POST, "/api/warehouses", WAREHOUSE_CREATE),
+            new Rule(PUT, "/api/warehouses/{id}", WAREHOUSE_EDIT),
+            new Rule(GET, "/api/zones", WAREHOUSE_VIEW),
+            new Rule(GET, "/api/zones/{id}", WAREHOUSE_VIEW),
+            new Rule(POST, "/api/zones", WAREHOUSE_CREATE),
+            new Rule(PUT, "/api/zones/{id}", WAREHOUSE_EDIT),
+            new Rule(GET, "/api/positions", WAREHOUSE_VIEW),
+            new Rule(GET, "/api/positions/{id}", WAREHOUSE_VIEW),
+            new Rule(POST, "/api/positions", WAREHOUSE_CREATE),
+            new Rule(PUT, "/api/positions/{id}", WAREHOUSE_EDIT),
+            new Rule(GET, "/api/products", PRODUCT_VIEW),
+            new Rule(GET, "/api/products/{id}", PRODUCT_VIEW),
+            new Rule(POST, "/api/products", PRODUCT_CREATE),
+            new Rule(PUT, "/api/products/{id}", PRODUCT_EDIT),
+            new Rule(GET, "/api/products/{id}/packages", PRODUCT_VIEW),
+            new Rule(POST, "/api/products/{id}/packages", PRODUCT_CREATE),
+            new Rule(PUT, "/api/products/{id}/packages/{packageId}", PRODUCT_EDIT),
+            new Rule(GET, "/api/pre-receipts", PRE_RECEIPT_VIEW),
+            new Rule(GET, "/api/pre-receipts/{id}", PRE_RECEIPT_VIEW),
+            new Rule(POST, "/api/pre-receipts", PRE_RECEIPT_CREATE),
+            new Rule(POST, "/api/pre-receipts/import", PRE_RECEIPT_CREATE),
+            new Rule(PUT, "/api/pre-receipts/{id}", PRE_RECEIPT_EDIT),
+            new Rule(GET, "/api/receipts", RECEIPT_VIEW),
+            new Rule(GET, "/api/receipts/{id}", RECEIPT_VIEW),
+            new Rule(POST, "/api/receipts/{id}/confirm", RECEIPT_EXECUTE),
+            new Rule(GET, "/api/putaway-tasks", PUTAWAY_VIEW),
+            new Rule(GET, "/api/putaway-tasks/{id}", PUTAWAY_VIEW),
+            new Rule(POST, "/api/putaway-tasks/{id}/start", PUTAWAY_EXECUTE),
+            new Rule(POST, "/api/putaway-tasks/{id}/complete", PUTAWAY_EXECUTE),
+            new Rule(GET, "/api/orders", ORDER_VIEW),
+            new Rule(GET, "/api/orders/{id}", ORDER_VIEW),
+            new Rule(POST, "/api/orders", ORDER_CREATE),
+            new Rule(PUT, "/api/orders/{id}", ORDER_EDIT),
+            new Rule(POST, "/api/orders/{id}/cancel", ORDER_CANCEL),
+            new Rule(GET, "/api/waves", WAVE_VIEW),
+            new Rule(GET, "/api/waves/{id}", WAVE_VIEW),
+            new Rule(POST, "/api/waves", WAVE_CREATE),
+            new Rule(POST, "/api/waves/{id}/cancel", WAVE_CANCEL),
+            new Rule(GET, "/api/picking-tasks", PICKING_VIEW),
+            new Rule(GET, "/api/picking-tasks/{id}", PICKING_VIEW),
+            new Rule(POST, "/api/picking-tasks/{id}/start", PICKING_EXECUTE),
+            new Rule(POST, "/api/picking-tasks/{id}/complete", PICKING_EXECUTE),
+            new Rule(POST, "/api/picking-tasks/{id}/divergences", PICKING_REPORT_DIVERGENCE),
+            new Rule(GET, "/api/transfers", TRANSFER_VIEW),
+            new Rule(GET, "/api/transfers/{id}", TRANSFER_VIEW),
+            new Rule(POST, "/api/transfers", TRANSFER_EXECUTE),
+            new Rule(POST, "/api/transfers/{id}/confirm", TRANSFER_EXECUTE),
+            new Rule(GET, "/api/stock", STOCK_VIEW),
+            new Rule(GET, "/api/stock/{id}", STOCK_VIEW),
+            new Rule(POST, "/api/stock/{id}/block", STOCK_BLOCK),
+            new Rule(POST, "/api/stock/{id}/unblock", STOCK_UNBLOCK),
+            new Rule(POST, "/api/positions/{id}/block", STOCK_BLOCK),
+            new Rule(POST, "/api/positions/{id}/unblock", STOCK_UNBLOCK),
+            new Rule(GET, "/api/stock-transactions", AUDIT_VIEW),
+            new Rule(GET, "/api/stock-transactions/{id}", AUDIT_VIEW),
+            new Rule(GET, "/api/shipments", SHIPMENT_VIEW),
+            new Rule(GET, "/api/shipments/{id}", SHIPMENT_VIEW),
+            new Rule(POST, "/api/shipments/{id}/confirm", SHIPMENT_EXECUTE),
+            new Rule(POST, "/api/shipments/{id}/dispatch", SHIPMENT_EXECUTE),
+            new Rule(GET, "/api/inventories", INVENTORY_VIEW),
+            new Rule(GET, "/api/inventories/{id}", INVENTORY_VIEW),
+            new Rule(POST, "/api/inventories/{id}/counts", INVENTORY_EXECUTE),
+            new Rule(POST, "/api/inventories/{id}/adjust", INVENTORY_ADJUST),
+            new Rule(GET, "/api/tasks", TASK_VIEW),
+            new Rule(GET, "/api/tasks/{id}", TASK_VIEW),
+            new Rule(POST, "/api/tasks/{id}/cancel", TASK_CANCEL),
+            new Rule(POST, "/api/tasks/{id}/authorize-excess", TASK_QUANTITY_OVERRIDE)
+    );
+}
