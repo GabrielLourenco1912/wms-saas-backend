@@ -6,6 +6,8 @@ import dev.lourencogabriel.wmssaas.inbound.repository.ReceiptConfirmationReposit
 import dev.lourencogabriel.wmssaas.operation.repository.WmsOperationRepository;
 import dev.lourencogabriel.wmssaas.order.repository.OrderItemRepository;
 import dev.lourencogabriel.wmssaas.order.repository.WarehouseOrderRepository;
+import dev.lourencogabriel.wmssaas.order.model.WarehouseOrder;
+import dev.lourencogabriel.wmssaas.order.model.OrderItem;
 import dev.lourencogabriel.wmssaas.partner.model.Partner;
 import dev.lourencogabriel.wmssaas.partner.repository.PartnerRepository;
 import dev.lourencogabriel.wmssaas.product.model.Category;
@@ -44,6 +46,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static dev.lourencogabriel.wmssaas.inbound.dto.InboundDtos.*;
@@ -88,12 +91,14 @@ class InboundApiIntegrationTest {
     ProductPackaging unit;
     Partner supplier;
     String manager;
+    String managerId;
     String operator;
 
     @BeforeEach
     void fixture() {
         String unique=UUID.randomUUID().toString();
         manager=token("GESTOR","inbound-manager-"+unique+"@example.com");
+        managerId=users.findByEmail("inbound-manager-"+unique+"@example.com").getUlid();
         operator=token("OPERADOR","inbound-operator-"+unique+"@example.com");
         warehouse=new Warehouse(); warehouse.setName("Inbound "+unique); warehouse=warehouses.saveAndFlush(warehouse);
         Zone zone=new Zone(); zone.setWarehouseId(warehouse.getId()); zone.setName("Zona A"); zone=zones.saveAndFlush(zone);
@@ -128,6 +133,84 @@ class InboundApiIntegrationTest {
         PreReceiptDetail updated=data(response,PreReceiptDetail.class);
         assertEquals(0,new BigDecimal("12").compareTo(updated.items().getFirst().requestedQuantity()));
         assertTrue(warehouseStock().isEmpty());
+    }
+
+    @Test
+    void shouldPageSearchAndLookupOnlyMatchingInboundDocumentsAndTasks() throws Exception {
+        for (int index=0;index<21;index++) {
+            var order=new WarehouseOrder();order.setWarehouseId(warehouse.getId());order.setPartnerId(supplier.getId());
+            order.setDocumentNumber("QUERY-NF-"+index);order.setType("ENTRADA");order.setStatus("PENDENTE");order.setCreatedById(managerId);
+            order=orders.saveAndFlush(order);
+            var item=new OrderItem();item.setOrderId(order.getId());item.setProductId(product.getId());item.setRequestedQuantity(BigDecimal.ONE);orderItems.saveAndFlush(item);
+        }
+        mvc.perform(get("/api/search/pre-receipts").header("Authorization",manager).param("q","query-nf-")
+                .param("warehouseId",warehouse.getId()).param("partnerId",supplier.getId()).param("productId",product.getId()).param("status","PENDENTE"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.size").value(20))
+                .andExpect(jsonPath("$.data.totalElements").value(21)).andExpect(jsonPath("$.data.content.length()").value(20));
+        mvc.perform(get("/api/receipts").header("Authorization",operator).param("q","QUERY-NF-")
+                .param("warehouseId",warehouse.getId()).param("page","1").param("size","7"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(21)).andExpect(jsonPath("$.data.content.length()").value(7));
+        mvc.perform(get("/api/lookups/receipts").header("Authorization",operator).param("q","query-nf-").param("warehouseId",warehouse.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.size").value(5)).andExpect(jsonPath("$.data.content.length()").value(5))
+                .andExpect(jsonPath("$.data.content[0].label").isString()).andExpect(jsonPath("$.data.content[0].warehouseId").doesNotExist());
+        mvc.perform(get("/api/lookups/pre-receipts").header("Authorization",operator)).andExpect(status().isForbidden());
+        var expected=create("1");var received=confirm(expected,"1","QUERY-LPN-"+key(),"LOT-QUERY");
+        mvc.perform(get("/api/search/putaway-tasks").header("Authorization",operator).param("q",received.putawayTask().id())
+                .param("warehouseId",warehouse.getId()).param("orderId",expected.receipt().id()).param("productId",product.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        mvc.perform(get("/api/lookups/putaway-tasks").header("Authorization",operator).param("warehouseId",warehouse.getId())
+                .param("lpnId",received.confirmation().lpnId()).param("productId",product.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.content[0].id").value(received.putawayTask().id()));
+    }
+
+    @Test
+    void shouldSearchCompletedPutawayProductsFromItsLedgerRatherThanLaterLpnContents() throws Exception {
+        var expected=create("1");String firstLpn="HISTORY-A-"+key();
+        var first=confirm(expected,"1",firstLpn,"LOT-A");
+        postJson("/api/putaway-tasks/"+first.putawayTask().id()+"/start",null,operator,key()).andExpect(status().isOk());
+        postJson("/api/putaway-tasks/"+first.putawayTask().id()+"/complete",
+                new CompletePutawayRequest(BigDecimal.ONE,firstLpn,storage.getCode()),operator,key()).andExpect(status().isOk());
+
+        var secondProduct=new Product();secondProduct.setCategoryId(product.getCategoryId());secondProduct.setSku("LATER-"+key());
+        secondProduct.setName("Produto incluído depois do putaway");secondProduct.setBaseUnit("UN");
+        secondProduct.setUnitWeightKg(BigDecimal.ONE);secondProduct.setUnitVolumeM3(new BigDecimal("0.1"));
+        secondProduct.setLotControlled(false);secondProduct.setExpiryControlled(false);secondProduct=products.saveAndFlush(secondProduct);
+        var secondUnit=new ProductPackaging();secondUnit.setProductId(secondProduct.getId());secondUnit.setType("UN");
+        secondUnit.setConversionFactor(BigDecimal.ONE);secondUnit=packaging.saveAndFlush(secondUnit);
+        var request=new PreReceiptRequest(warehouse.getId(),supplier.getId(),"LATER-"+key(),null,
+                List.of(new ExpectedItem(secondProduct.getId(),BigDecimal.ONE),new ExpectedItem(product.getId(),BigDecimal.ONE)));
+        var documentResponse=postJson("/api/pre-receipts",request,manager,key()).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        var secondDocument=data(documentResponse,PreReceiptDetail.class);String secondLpn="HISTORY-B-"+key();
+        String secondProductId=secondProduct.getId();
+        var confirmation=new ConfirmReceiptRequest(secondDocument.items().stream().filter(item->item.productId().equals(secondProductId)).findFirst().orElseThrow().id(),secondUnit.getId(),BigDecimal.ONE,null,null,
+                secondLpn,dock.getId(),secondProduct.getSku(),secondLpn,dock.getCode());
+        var receiptResponse=postJson("/api/receipts/"+secondDocument.receipt().id()+"/confirm",confirmation,operator,key())
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var second=data(receiptResponse,ReceiptResult.class);
+        var additional=new ConfirmReceiptRequest(secondDocument.items().stream().filter(item->item.productId().equals(product.getId())).findFirst().orElseThrow().id(),
+                unit.getId(),BigDecimal.ONE,"LOT-A2",expiry(),secondLpn,dock.getId(),product.getSku(),secondLpn,dock.getCode());
+        postJson("/api/receipts/"+secondDocument.receipt().id()+"/confirm",additional,operator,key()).andExpect(status().isOk());
+        assertNull(tasks.findById(second.putawayTask().id()).orElseThrow().getProductId(),"The cancelled task must represent a mixed-SKU LPN");
+        assertNull(tasks.findById(second.putawayTask().id()).orElseThrow().getSourceStockId());
+        postJson("/api/tasks/"+second.putawayTask().id()+"/cancel",Map.of("reason","Mover para LPN já armazenado"),manager,key())
+                .andExpect(status().isOk());
+        var transferResponse=postJson("/api/transfers",Map.of("stockId",second.stockId(),"destinationPositionId",storage.getId(),
+                "destinationLpnCode",firstLpn,"quantity",1),operator,key()).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String transferId=mapper.readTree(transferResponse).path("data").path("id").asText();
+        postJson("/api/transfers/"+transferId+"/confirm",Map.of("actualQuantity",1,"scannedLpnCode",secondLpn,
+                "scannedOriginCode",dock.getCode(),"scannedDestinationCode",storage.getCode(),"scannedProductCode",secondProduct.getSku()),operator,key())
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/search/putaway-tasks").header("Authorization",operator).param("q",first.putawayTask().id())
+                .param("productId",secondProduct.getId())).andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+        mvc.perform(get("/api/search/putaway-tasks").header("Authorization",operator).param("q",first.putawayTask().id())
+                .param("productId",product.getId())).andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        mvc.perform(get("/api/lookups/putaway-tasks").header("Authorization",operator).param("q",second.putawayTask().id())
+                .param("productId",secondProduct.getId()).param("status","CANCELADA"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        mvc.perform(get("/api/lookups/putaway-tasks").header("Authorization",operator).param("q",second.putawayTask().id())
+                .param("productId",product.getId()).param("status","CANCELADA"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
     }
 
     @Test

@@ -24,6 +24,10 @@ import dev.lourencogabriel.wmssaas.warehouse.model.Position;
 import dev.lourencogabriel.wmssaas.warehouse.repository.PositionRepository;
 
 import dev.lourencogabriel.wmssaas.shared.api.PageResponse;
+import dev.lourencogabriel.wmssaas.shared.api.PageQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupOption;
+import dev.lourencogabriel.wmssaas.inbound.dto.InboundFilters;
 import dev.lourencogabriel.wmssaas.web.exception.BusinessRuleException;
 import dev.lourencogabriel.wmssaas.web.exception.ResourceNotFoundException;
 
@@ -79,10 +83,32 @@ public class InboundService {
         return list(warehouseId,status,pageable);
     }
     private PageResponse<PreReceiptResponse> list(String warehouseId,String status,Pageable pageable) {
-        Specification<WarehouseOrder> spec = (r,q,b) -> b.equal(r.get("type"),"ENTRADA");
-        if (warehouseId != null) spec = spec.and((r,q,b) -> b.equal(r.get("warehouseId"),warehouseId));
-        if (status != null) spec = spec.and((r,q,b) -> b.equal(r.get("status"),status));
-        return PageResponse.from(orders.findAll(spec,page(pageable)).map(this::receiptResponse));
+        return PageResponse.from(orders.findAll(InboundSearchSpecifications.receipts(null,
+                new InboundFilters.Receipts(warehouseId,status,null,null,null)),page(pageable)).map(this::receiptResponse));
+    }
+    @Transactional(readOnly=true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PRE_RECEIPT_VIEW')")
+    public PageResponse<PreReceiptResponse> preReceipts(PageQuery query, InboundFilters.Receipts filters) {
+        return PageResponse.from(orders.findAll(InboundSearchSpecifications.receipts(query.getQ(),filters),query.toPageable()).map(this::receiptResponse));
+    }
+    @Transactional(readOnly=true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'RECEIPT_VIEW')")
+    public PageResponse<PreReceiptResponse> receipts(PageQuery query, InboundFilters.Receipts filters) {
+        return PageResponse.from(orders.findAll(InboundSearchSpecifications.receipts(query.getQ(),filters),query.toPageable()).map(this::receiptResponse));
+    }
+    @Transactional(readOnly=true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PRE_RECEIPT_VIEW')")
+    public PageResponse<LookupOption> preReceiptLookups(LookupQuery query, InboundFilters.Receipts filters) {
+        return PageResponse.from(orders.findAll(InboundSearchSpecifications.receipts(query.getQ(),filters),query.toPageable()).map(this::receiptLookup));
+    }
+    @Transactional(readOnly=true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'RECEIPT_VIEW')")
+    public PageResponse<LookupOption> receiptLookups(LookupQuery query, InboundFilters.Receipts filters) {
+        return PageResponse.from(orders.findAll(InboundSearchSpecifications.receipts(query.getQ(),filters),query.toPageable()).map(this::receiptLookup));
+    }
+    private LookupOption receiptLookup(WarehouseOrder order) {
+        String label=order.getDocumentNumber()==null||order.getDocumentNumber().isBlank()?order.getId():order.getDocumentNumber();
+        return new LookupOption(order.getId(),label+" — "+order.getStatus());
     }
     @Transactional(readOnly=true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PRE_RECEIPT_VIEW') or @wmsAuthorization.can(authentication, 'RECEIPT_VIEW')")
@@ -256,14 +282,19 @@ public class InboundService {
     @Transactional(readOnly=true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PUTAWAY_VIEW')")
     public PageResponse<PutawayTaskResponse> putawayTasks(String warehouseId, String status, String assignedUserId, Pageable pageable) {
-        Specification<WarehouseTask> specification = (r,q,b) -> b.equal(r.get("type"),"PUTAWAY");
-        if (warehouseId != null) {
-            List<String> ids = positions.findByWarehouseId(warehouseId).stream().map(Position::getId).toList();
-            specification = specification.and((r,q,b) -> r.get("originPositionId").in(ids));
-        }
-        if (status != null) specification = specification.and((r,q,b) -> b.equal(r.get("status"),status));
-        if (assignedUserId != null) specification = specification.and((r,q,b) -> b.equal(r.get("assignedUserId"),assignedUserId));
-        return PageResponse.from(tasks.findAll(specification,page(pageable)).map(this::putawayResponse));
+        return PageResponse.from(tasks.findAll(InboundSearchSpecifications.putaway(null,
+                new InboundFilters.PutawayTasks(warehouseId,status,assignedUserId,null,null,null)),page(pageable)).map(this::putawayResponse));
+    }
+    @Transactional(readOnly=true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PUTAWAY_VIEW')")
+    public PageResponse<PutawayTaskResponse> putawayTasks(PageQuery query, InboundFilters.PutawayTasks filters) {
+        return PageResponse.from(tasks.findAll(InboundSearchSpecifications.putaway(query.getQ(),filters),query.toPageable()).map(this::putawayResponse));
+    }
+    @Transactional(readOnly=true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PUTAWAY_VIEW')")
+    public PageResponse<LookupOption> putawayLookups(LookupQuery query, InboundFilters.PutawayTasks filters) {
+        return PageResponse.from(tasks.findAll(InboundSearchSpecifications.putaway(query.getQ(),filters),query.toPageable())
+                .map(task -> new LookupOption(task.getId(),task.getType()+" — "+task.getStatus()+" — "+task.getId())));
     }
     @Transactional(readOnly=true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PUTAWAY_VIEW')")
@@ -319,7 +350,7 @@ public class InboundService {
     }
     private static String normalized(String value) { return value == null || value.isBlank() ? null : value.trim(); }
     private static Pageable page(Pageable requested) {
-        return PageRequest.of(Math.max(0,requested.getPageNumber()), Math.min(200,requested.getPageSize()), Sort.by("createdAt").descending().and(Sort.by("id")));
+        return PageRequest.of(Math.max(0,requested.getPageNumber()), Math.min(100,requested.getPageSize()), Sort.by("id"));
     }
     private PreReceiptResponse receiptResponse(WarehouseOrder order) {
         return new PreReceiptResponse(order.getId(),order.getWarehouseId(),order.getPartnerId(),order.getDocumentNumber(),order.getType(),
