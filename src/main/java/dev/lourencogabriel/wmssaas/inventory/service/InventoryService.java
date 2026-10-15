@@ -6,7 +6,11 @@ import dev.lourencogabriel.wmssaas.inventory.model.*;
 import dev.lourencogabriel.wmssaas.inventory.repository.*;
 import dev.lourencogabriel.wmssaas.operation.service.OperationService;
 import dev.lourencogabriel.wmssaas.product.model.Product;
-import dev.lourencogabriel.wmssaas.shared.api.PageResponse;
+import dev.lourencogabriel.wmssaas.shared.api.*;
+import dev.lourencogabriel.wmssaas.inventory.dto.InventoryFilters;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.access.prepost.PreAuthorize;
+import static dev.lourencogabriel.wmssaas.shared.persistence.SearchSpecifications.*;
 import dev.lourencogabriel.wmssaas.stock.model.*;
 import dev.lourencogabriel.wmssaas.stock.repository.*;
 import dev.lourencogabriel.wmssaas.stock.service.StockMutationService;
@@ -55,6 +59,23 @@ public class InventoryService {
             if (status != null) predicates.add(b.equal(r.get("status"), status));
             return b.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
         }, bounded).map(this::summary));
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'INVENTORY_VIEW')")
+    public PageResponse<Summary> search(PageQuery query,InventoryFilters filters) {
+        return PageResponse.from(inventories.findAll(searchSpec(query,filters),query.toPageable()).map(this::summary));
+    }
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'INVENTORY_VIEW')")
+    public PageResponse<LookupOption> lookup(LookupQuery query,InventoryFilters filters) {
+        return PageResponse.from(inventories.findAll(searchSpec(query,filters),query.toPageable())
+                .map(inventory -> new LookupOption(inventory.getId(),mutation.position(inventory.getPositionId()).getCode()+" | "+inventory.getStatus()+" | "+inventory.getId())));
+    }
+    private Specification<Inventory> searchSpec(PageQuery query,InventoryFilters filters) {
+        return dev.lourencogabriel.wmssaas.shared.persistence.SearchSpecifications.<Inventory>text(query.getQ(),"id","status","responsibleUserId")
+                .and(equal("warehouseId",filters.getWarehouseId())).and(equal("positionId",filters.getPositionId()))
+                .and(equal("status",filters.getStatus())).and(equal("responsibleUserId",filters.getResponsibleUserId()));
     }
 
     @Transactional(readOnly = true)
