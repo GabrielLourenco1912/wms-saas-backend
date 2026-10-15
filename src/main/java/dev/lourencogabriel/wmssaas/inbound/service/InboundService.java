@@ -31,6 +31,8 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -68,19 +70,19 @@ public class InboundService {
 
     @Transactional(readOnly=true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PRE_RECEIPT_VIEW')")
-    public PageResponse<WarehouseOrder> preReceipts(String warehouseId, String status, Pageable pageable) {
+    public PageResponse<PreReceiptResponse> preReceipts(String warehouseId, String status, Pageable pageable) {
         return list(warehouseId,status,pageable);
     }
     @Transactional(readOnly=true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'RECEIPT_VIEW')")
-    public PageResponse<WarehouseOrder> receipts(String warehouseId, String status, Pageable pageable) {
+    public PageResponse<PreReceiptResponse> receipts(String warehouseId, String status, Pageable pageable) {
         return list(warehouseId,status,pageable);
     }
-    private PageResponse<WarehouseOrder> list(String warehouseId,String status,Pageable pageable) {
+    private PageResponse<PreReceiptResponse> list(String warehouseId,String status,Pageable pageable) {
         Specification<WarehouseOrder> spec = (r,q,b) -> b.equal(r.get("type"),"ENTRADA");
         if (warehouseId != null) spec = spec.and((r,q,b) -> b.equal(r.get("warehouseId"),warehouseId));
         if (status != null) spec = spec.and((r,q,b) -> b.equal(r.get("status"),status));
-        return PageResponse.from(orders.findAll(spec,pageable));
+        return PageResponse.from(orders.findAll(spec,page(pageable)).map(this::receiptResponse));
     }
     @Transactional(readOnly=true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PRE_RECEIPT_VIEW') or @wmsAuthorization.can(authentication, 'RECEIPT_VIEW')")
@@ -88,7 +90,7 @@ public class InboundService {
         WarehouseOrder order = order(id);
         List<OrderItem> orderItems = items.findByOrderId(id);
         List<ReceiptConfirmation> received = orderItems.stream().flatMap(i -> confirmations.findByOrderItemId(i.getId()).stream()).toList();
-        return new PreReceiptDetail(order,orderItems,received);
+        return detailResponse(order,orderItems,received);
     }
     private WarehouseOrder order(String id) {
         return orders.findById(id).filter(o -> "ENTRADA".equals(o.getType())).orElseThrow(() -> new ResourceNotFoundException("Pre-receipt",id));
@@ -104,8 +106,9 @@ public class InboundService {
         order.setDocumentNumber(request.documentNumber().trim()); order.setExpectedAt(request.expectedAt()); order.setType("ENTRADA");
         order.setStatus("PENDENTE"); order.setCreatedById(actor); order.setCreatedAt(Instant.now()); order.setUpdatedAt(Instant.now()); orders.saveAndFlush(order);
         List<OrderItem> lines = writeItems(order.getId(),request.items());
+        entityManager.flush();
         // RN017: documentary expectation deliberately creates neither stock nor a stock transaction.
-        return new PreReceiptDetail(order,lines,List.of());
+        return detailResponse(order,lines,List.of());
     }
     private void validateDocument(PreReceiptRequest request) {
         Partner partner = partners.findById(request.partnerId()).filter(p -> Boolean.TRUE.equals(p.getActive()))
@@ -134,8 +137,8 @@ public class InboundService {
             List<OrderItem> current = items.findByOrderId(id);
             if (!"PENDENTE".equals(order.getStatus()) || current.stream().anyMatch(i -> !confirmations.findByOrderItemId(i.getId()).isEmpty())) throw new BusinessRuleException("A receipt already being checked cannot be edited");
             validateDocument(request); order.setPartnerId(request.partnerId()); order.setDocumentNumber(request.documentNumber()); order.setExpectedAt(request.expectedAt());
-            items.deleteAll(current); items.flush(); List<OrderItem> lines = writeItems(id,request.items()); orders.save(order);
-            return new PreReceiptDetail(order,lines,List.of());
+            items.deleteAll(current); items.flush(); List<OrderItem> lines = writeItems(id,request.items()); orders.saveAndFlush(order);
+            return detailResponse(order,lines,List.of());
         });
     }
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PRE_RECEIPT_CREATE')")
@@ -152,9 +155,9 @@ public class InboundService {
             factory.setFeature("http://xml.org/sax/features/external-parameter-entities",false);
             factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD,""); factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA,"");
             factory.setXIncludeAware(false); factory.setExpandEntityReferences(false);
-            Document doc = factory.newDocumentBuilder().parse(new InputSource(new StringReader(request.invoiceXml())));
+            Document doc = secureBuilder(factory).parse(new InputSource(new StringReader(request.invoiceXml())));
             String number = text(doc.getDocumentElement(),"nNF");
-            if (number == null || number.isBlank()) throw new BusinessRuleException("NF-e document number is missing");
+            if (number == null || number.isBlank() || number.length() > 50) throw new BusinessRuleException("NF-e document number is missing or too long");
             NodeList lines = doc.getElementsByTagNameNS("*","det");
             if (lines.getLength() == 0 || lines.getLength() > 500) throw new BusinessRuleException("NF-e must contain between 1 and 500 items");
             Map<String,BigDecimal> expected = new LinkedHashMap<>();
@@ -163,10 +166,18 @@ public class InboundService {
                 BigDecimal quantity = new BigDecimal(text(line,"qCom")); StockMutationService.positive(quantity);
                 ProductPackaging pack = barcode == null ? null : packaging.findByBarcode(barcode).orElse(null);
                 Product product;
-                if (pack != null && Boolean.TRUE.equals(pack.getActive())) {
-                    product = mutation.product(pack.getProductId()); quantity = quantity.multiply(pack.getConversionFactor());
-                } else product = products.findBySku(sku).orElseThrow(() -> new BusinessRuleException("NF-e SKU is not registered: " + sku));
+                if (pack != null && !Boolean.TRUE.equals(pack.getActive())) throw new BusinessRuleException("NF-e packaging is inactive");
+                if (pack != null) {
+                    product = mutation.product(pack.getProductId()); quantity = quantity.multiply(pack.getConversionFactor()).stripTrailingZeros();
+                } else {
+                    product = products.findBySku(sku).orElseThrow(() -> new BusinessRuleException("NF-e SKU is not registered: " + sku));
+                    String unit = text(line,"uCom");
+                    if (unit != null && !unit.equalsIgnoreCase(product.getBaseUnit())) {
+                        throw new BusinessRuleException("NF-e unit requires a registered matching packaging barcode: " + sku);
+                    }
+                }
                 StockMutationService.positive(quantity); expected.merge(product.getId(),quantity,BigDecimal::add);
+                StockMutationService.positive(expected.get(product.getId()).stripTrailingZeros());
             }
             return new PreReceiptRequest(request.warehouseId(),request.partnerId(),number,request.expectedAt(),expected.entrySet().stream().map(e -> new ExpectedItem(e.getKey(),e.getValue())).toList());
         } catch (BusinessRuleException e) { throw e; }
@@ -187,13 +198,13 @@ public class InboundService {
             if (!Boolean.TRUE.equals(product.getActive())) throw new BusinessRuleException("Product is inactive");
             ProductPackaging pack = packaging.findById(request.packagingId()).filter(p -> product.getId().equals(p.getProductId()) && Boolean.TRUE.equals(p.getActive()))
                     .orElseThrow(() -> new BusinessRuleException("An active packaging of this product is required"));
-            StockMutationService.positive(request.quantity()); BigDecimal baseQuantity = request.quantity().multiply(pack.getConversionFactor()); StockMutationService.positive(baseQuantity);
+            StockMutationService.positive(request.quantity()); BigDecimal baseQuantity = request.quantity().multiply(pack.getConversionFactor()).stripTrailingZeros(); StockMutationService.positive(baseQuantity);
             if (item.getFulfilledQuantity().add(baseQuantity).compareTo(item.getRequestedQuantity()) > 0) throw new BusinessRuleException("Receipt quantity exceeds the expected item");
             mutation.validateTrace(product,request.lot(),request.expiryDate()); mutation.lockPositions(List.of(request.positionId()));
             Position dock = mutation.position(request.positionId());
             if (!"RECEBIMENTO".equals(dock.getPurpose()) || !order.getWarehouseId().equals(mutation.warehouseForPosition(dock.getId()))) throw new BusinessRuleException("Receipt requires an inbound dock in the order warehouse");
             String expectedCode = pack.getBarcode() == null || pack.getBarcode().isBlank() ? product.getSku() : pack.getBarcode();
-            if (!request.scannedProductCode().equals(product.getSku())) StockMutationService.requireCode(request.scannedProductCode(),expectedCode,"SKU or packaging");
+            if (!request.scannedProductCode().trim().equals(product.getSku())) StockMutationService.requireCode(request.scannedProductCode(),expectedCode,"SKU or packaging");
             StockMutationService.requireCode(request.scannedPositionCode(),dock.getCode(),"receiving dock");
             StockMutationService.requireCode(request.scannedLpnCode(),request.lpnCode(),"LPN");
             Lpn lpn = mutation.getOrCreateLpn(request.lpnCode(),dock);
@@ -201,16 +212,16 @@ public class InboundService {
             if (currentTasks.stream().anyMatch(t -> "EM_EXECUCAO".equals(t.getStatus()))) throw new BusinessRuleException("LPN putaway has already started");
             ReceiptConfirmation confirmation = new ReceiptConfirmation(); confirmation.setOrderItemId(item.getId()); confirmation.setPackagingId(pack.getId());
             confirmation.setLpnId(lpn.getId()); confirmation.setPositionId(dock.getId()); confirmation.setInformedQuantity(request.quantity()); confirmation.setBaseQuantity(baseQuantity);
-            confirmation.setLot(request.lot()); confirmation.setExpiryDate(request.expiryDate()); confirmation.setUserId(actor); confirmation.setOperationId(op); confirmation.setConfirmedAt(Instant.now());
+            confirmation.setLot(normalized(request.lot())); confirmation.setExpiryDate(request.expiryDate()); confirmation.setUserId(actor); confirmation.setOperationId(op); confirmation.setConfirmedAt(Instant.now());
             confirmations.saveAndFlush(confirmation);
-            Stock stock = mutation.receive(product,lpn,dock,baseQuantity,request.lot(),request.expiryDate(),confirmation.getId(),actor,op);
+            Stock stock = mutation.receive(product,lpn,dock,baseQuantity,normalized(request.lot()),request.expiryDate(),confirmation.getId(),actor,op);
             item.setFulfilledQuantity(item.getFulfilledQuantity().add(baseQuantity)); items.save(item);
             boolean complete = items.findByOrderId(id).stream().allMatch(i -> i.getRequestedQuantity().compareTo(i.getFulfilledQuantity()) == 0);
             order.setStatus(complete ? "ATENDIDO" : "EM_RECEBIMENTO"); orders.save(order);
             WarehouseTask task = currentTasks.isEmpty() ? new WarehouseTask() : currentTasks.getFirst();
             boolean created = task.getId() == null;
             task.setType("PUTAWAY"); task.setLpnId(lpn.getId()); task.setOriginPositionId(dock.getId());
-            task.setOrderId(id); task.setStatus("PENDENTE"); task.setPriority(1);
+            if (created) task.setOrderId(id); task.setStatus("PENDENTE"); task.setPriority(1);
             List<Stock> lpnStocks = stocks.findByLpnId(lpn.getId());
             task.setTargetQuantity(lpnStocks.stream().map(Stock::getQuantity).reduce(BigDecimal.ZERO,BigDecimal::add));
             task.setProductId(lpnStocks.stream().map(Stock::getProductId).distinct().count() == 1 ? product.getId() : null);
@@ -218,18 +229,20 @@ public class InboundService {
             task.setDestinationPositionId(putawayDestination(order.getWarehouseId(),lpnStocks,task.getId()));
             if (created) task.setCreatedAt(Instant.now()); tasks.saveAndFlush(task);
             mutation.history(task,created ? null : "PENDENTE",actor,op,created ? "Putaway generated by receipt" : "Additional LPN content included in putaway");
-            return new ReceiptResult(confirmation,stock.getId(),task);
+            entityManager.flush();
+            return new ReceiptResult(confirmationResponse(confirmation),stock.getId(),putawayResponse(task));
         });
     }
     private String putawayDestination(String warehouseId,List<Stock> incoming,String excludingTaskId) {
         BigDecimal weight = BigDecimal.ZERO, volume = BigDecimal.ZERO;
         for (Stock s : incoming) { Product p=mutation.product(s.getProductId()); weight=weight.add(s.getQuantity().multiply(p.getUnitWeightKg())); volume=volume.add(s.getQuantity().multiply(p.getUnitVolumeM3())); }
+        List<WarehouseTask> planned = plannedPutawayTasks();
         for (Position position : positions.findByWarehouseId(warehouseId)) {
             if (!"ARMAZENAGEM".equals(position.getPurpose())) continue;
             try {
                 mutation.ensureDestination(position);
                 BigDecimal plannedWeight=weight, plannedVolume=volume;
-                for (WarehouseTask task : tasks.findByStatus("PENDENTE")) {
+                for (WarehouseTask task : planned) {
                     if (!"PUTAWAY".equals(task.getType()) || !position.getId().equals(task.getDestinationPositionId()) || Objects.equals(task.getId(),excludingTaskId)) continue;
                     for (Stock balance : stocks.findByLpnId(task.getLpnId())) {
                         Product p=mutation.product(balance.getProductId()); plannedWeight=plannedWeight.add(balance.getQuantity().multiply(p.getUnitWeightKg())); plannedVolume=plannedVolume.add(balance.getQuantity().multiply(p.getUnitVolumeM3()));
@@ -242,27 +255,38 @@ public class InboundService {
     }
     @Transactional(readOnly=true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PUTAWAY_VIEW')")
-    public PageResponse<WarehouseTask> putawayTasks(Pageable pageable) { return PageResponse.from(tasks.findByType("PUTAWAY",pageable)); }
+    public PageResponse<PutawayTaskResponse> putawayTasks(String warehouseId, String status, String assignedUserId, Pageable pageable) {
+        Specification<WarehouseTask> specification = (r,q,b) -> b.equal(r.get("type"),"PUTAWAY");
+        if (warehouseId != null) {
+            List<String> ids = positions.findByWarehouseId(warehouseId).stream().map(Position::getId).toList();
+            specification = specification.and((r,q,b) -> r.get("originPositionId").in(ids));
+        }
+        if (status != null) specification = specification.and((r,q,b) -> b.equal(r.get("status"),status));
+        if (assignedUserId != null) specification = specification.and((r,q,b) -> b.equal(r.get("assignedUserId"),assignedUserId));
+        return PageResponse.from(tasks.findAll(specification,page(pageable)).map(this::putawayResponse));
+    }
     @Transactional(readOnly=true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PUTAWAY_VIEW')")
-    public WarehouseTask putawayTask(String id) {
-        return tasks.findById(id).filter(t -> "PUTAWAY".equals(t.getType())).orElseThrow(() -> new ResourceNotFoundException("Putaway task",id));
-    }
+    public PutawayTaskResponse putawayTask(String id) { return putawayResponse(putawayWithoutAuth(id)); }
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PUTAWAY_EXECUTE')")
-    public WarehouseTask startPutaway(String id,String key) {
+    public PutawayTaskResponse startPutaway(String id,String key) {
         String actor=currentActorId();
-        return operations.execute(key,List.of(id,"start"),actor,"INICIAR_PUTAWAY",WarehouseTask.class,op -> {
+        return operations.execute(key,List.of(id,"start"),actor,"INICIAR_PUTAWAY",PutawayTaskResponse.class,op -> {
             WarehouseTask task=putawayWithoutAuth(id); mutation.lockWarehouse(mutation.warehouseForPosition(task.getOriginPositionId())); entityManager.refresh(task,LockModeType.PESSIMISTIC_WRITE);
-            mutation.transition(task,"EM_EXECUCAO",actor,op,null); return tasks.save(task);
+            Lpn lpn = lpns.findByIdForUpdate(task.getLpnId()).orElseThrow(() -> new BusinessRuleException("Putaway LPN is unavailable"));
+            if (!Objects.equals(lpn.getPositionId(),task.getOriginPositionId())) throw new BusinessRuleException("LPN has moved since task generation");
+            for (Stock stock : stocks.findByLpnId(lpn.getId())) if (stock.getQuantity().signum() > 0) mutation.ensureMovable(stock);
+            mutation.ensureDestination(mutation.position(task.getDestinationPositionId()));
+            mutation.transition(task,"EM_EXECUCAO",actor,op,null); tasks.saveAndFlush(task); return putawayResponse(task);
         });
     }
     private WarehouseTask putawayWithoutAuth(String id) {
         return tasks.findById(id).filter(t -> "PUTAWAY".equals(t.getType())).orElseThrow(() -> new ResourceNotFoundException("Putaway task",id));
     }
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PUTAWAY_EXECUTE')")
-    public WarehouseTask completePutaway(String id,CompletePutawayRequest request,String key) {
+    public PutawayTaskResponse completePutaway(String id,CompletePutawayRequest request,String key) {
         String actor=currentActorId();
-        return operations.execute(key,List.of(id,request),actor,"CONCLUIR_PUTAWAY",WarehouseTask.class,op -> {
+        return operations.execute(key,List.of(id,request),actor,"CONCLUIR_PUTAWAY",PutawayTaskResponse.class,op -> {
             WarehouseTask task=putawayWithoutAuth(id); mutation.lockWarehouse(mutation.warehouseForPosition(task.getOriginPositionId())); entityManager.refresh(task,LockModeType.PESSIMISTIC_WRITE);
             if (!"EM_EXECUCAO".equals(task.getStatus()) || !actor.equals(task.getAssignedUserId())) throw new BusinessRuleException("Putaway must be started by the current operator");
             mutation.lockPositions(List.of(task.getOriginPositionId(),task.getDestinationPositionId()));
@@ -274,7 +298,57 @@ public class InboundService {
             if (request.actualQuantity().compareTo(task.getTargetQuantity()) != 0 || current.compareTo(request.actualQuantity()) != 0) throw new BusinessRuleException("Putaway quantity must match the complete LPN");
             if (!Objects.equals(lpn.getPositionId(),task.getOriginPositionId())) throw new BusinessRuleException("LPN has moved since task generation");
             mutation.moveWholeLpn(lpn,destination,actor,op,id,"PUTAWAY"); task.setActualQuantity(request.actualQuantity());
-            mutation.transition(task,"CONCLUIDA",actor,op,null); return tasks.save(task);
+            mutation.transition(task,"CONCLUIDA",actor,op,null); tasks.saveAndFlush(task); return putawayResponse(task);
         });
+    }
+
+    private List<WarehouseTask> plannedPutawayTasks() {
+        var planned = new ArrayList<>(tasks.findByStatus("PENDENTE"));
+        planned.addAll(tasks.findByStatus("EM_EXECUCAO"));
+        return planned;
+    }
+    private static javax.xml.parsers.DocumentBuilder secureBuilder(DocumentBuilderFactory factory)
+            throws javax.xml.parsers.ParserConfigurationException {
+        var builder = factory.newDocumentBuilder();
+        // Reject malformed/unsafe XML without the parser printing document contents to stderr.
+        builder.setErrorHandler(new org.xml.sax.helpers.DefaultHandler() {
+            @Override public void error(org.xml.sax.SAXParseException e) throws org.xml.sax.SAXException { throw e; }
+            @Override public void fatalError(org.xml.sax.SAXParseException e) throws org.xml.sax.SAXException { throw e; }
+        });
+        return builder;
+    }
+    private static String normalized(String value) { return value == null || value.isBlank() ? null : value.trim(); }
+    private static Pageable page(Pageable requested) {
+        return PageRequest.of(Math.max(0,requested.getPageNumber()), Math.min(200,requested.getPageSize()), Sort.by("createdAt").descending().and(Sort.by("id")));
+    }
+    private PreReceiptResponse receiptResponse(WarehouseOrder order) {
+        return new PreReceiptResponse(order.getId(),order.getWarehouseId(),order.getPartnerId(),order.getDocumentNumber(),order.getType(),
+                order.getExpectedAt(),order.getStatus(),order.getCreatedAt(),order.getUpdatedAt(),order.getCreatedById());
+    }
+    private ReceiptItemResponse itemResponse(OrderItem item) {
+        Product product = mutation.product(item.getProductId());
+        return new ReceiptItemResponse(item.getId(),item.getOrderId(),item.getProductId(),product.getSku(),product.getName(),
+                item.getRequestedQuantity(),item.getFulfilledQuantity(),item.getRequestedQuantity().subtract(item.getFulfilledQuantity()));
+    }
+    private ConfirmationResponse confirmationResponse(ReceiptConfirmation confirmation) {
+        Lpn lpn = lpns.findById(confirmation.getLpnId()).orElseThrow(() -> new BusinessRuleException("Confirmation LPN is unavailable"));
+        Position position = mutation.position(confirmation.getPositionId());
+        return new ConfirmationResponse(confirmation.getId(),confirmation.getOrderItemId(),confirmation.getPackagingId(),confirmation.getLpnId(),lpn.getTrackingCode(),
+                confirmation.getPositionId(),position.getCode(),confirmation.getInformedQuantity(),confirmation.getBaseQuantity(),confirmation.getLot(),confirmation.getExpiryDate(),
+                confirmation.getUserId(),confirmation.getOperationId(),confirmation.getConfirmedAt());
+    }
+    private PreReceiptDetail detailResponse(WarehouseOrder order,List<OrderItem> orderItems,List<ReceiptConfirmation> received) {
+        return new PreReceiptDetail(receiptResponse(order),orderItems.stream().map(this::itemResponse).toList(),received.stream().map(this::confirmationResponse).toList());
+    }
+    private PutawayTaskResponse putawayResponse(WarehouseTask task) {
+        Lpn lpn = lpns.findById(task.getLpnId()).orElseThrow(() -> new BusinessRuleException("Putaway LPN is unavailable"));
+        Position origin = mutation.position(task.getOriginPositionId()), destination = mutation.position(task.getDestinationPositionId());
+        List<PutawayContentResponse> contents = stocks.findByLpnId(lpn.getId()).stream().filter(s -> s.getQuantity().signum() > 0).map(stock -> {
+            Product product = mutation.product(stock.getProductId());
+            return new PutawayContentResponse(stock.getId(),stock.getProductId(),product.getSku(),product.getName(),stock.getQuantity(),stock.getLot(),stock.getExpiryDate(),stock.getEntryAt());
+        }).toList();
+        return new PutawayTaskResponse(task.getId(),task.getType(),task.getStatus(),task.getPriority(),mutation.warehouseForPosition(origin.getId()),
+                task.getOrderId(),task.getLpnId(),lpn.getTrackingCode(),origin.getId(),origin.getCode(),destination.getId(),destination.getCode(),task.getProductId(),
+                task.getTargetQuantity(),task.getActualQuantity(),task.getAssignedUserId(),task.getCreatedAt(),task.getStartedAt(),task.getCompletedAt(),contents);
     }
 }
