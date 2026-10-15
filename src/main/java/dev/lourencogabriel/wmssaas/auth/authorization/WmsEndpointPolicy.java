@@ -11,7 +11,11 @@ import static org.springframework.http.HttpMethod.*;
 public final class WmsEndpointPolicy {
     private WmsEndpointPolicy() {}
 
-    public record Rule(HttpMethod method, String pattern, WmsPermission permission) {}
+    public record Rule(HttpMethod method, String pattern, List<WmsPermission> permissions) {
+        public Rule(HttpMethod method, String pattern, WmsPermission permission) { this(method, pattern, List.of(permission)); }
+        public Rule(HttpMethod method, String pattern, WmsPermission first, WmsPermission second) { this(method, pattern, List.of(first, second)); }
+        public WmsPermission permission() { return permissions.getFirst(); }
+    }
 
     public static final List<Rule> RULES = List.of(
             new Rule(GET, "/api/users", USER_VIEW),
@@ -82,20 +86,30 @@ public final class WmsEndpointPolicy {
             new Rule(POST, "/api/transfers/{id}/confirm", TRANSFER_EXECUTE),
             new Rule(GET, "/api/stock", STOCK_VIEW),
             new Rule(GET, "/api/stock/{id}", STOCK_VIEW),
+            new Rule(GET, "/api/stock-blocks", STOCK_VIEW),
+            new Rule(POST, "/api/stock-blocks/lots", STOCK_BLOCK),
+            new Rule(POST, "/api/stock-blocks/{id}/release", STOCK_UNBLOCK),
             new Rule(POST, "/api/stock/{id}/block", STOCK_BLOCK),
             new Rule(POST, "/api/stock/{id}/unblock", STOCK_UNBLOCK),
             new Rule(POST, "/api/positions/{id}/block", STOCK_BLOCK),
             new Rule(POST, "/api/positions/{id}/unblock", STOCK_UNBLOCK),
             new Rule(GET, "/api/stock-transactions", AUDIT_VIEW),
             new Rule(GET, "/api/stock-transactions/{id}", AUDIT_VIEW),
+            new Rule(POST, "/api/stock-transactions/{id}/compensations", INVENTORY_ADJUST),
+            new Rule(GET, "/api/divergences", PICKING_VIEW),
+            new Rule(GET, "/api/divergences/{id}", PICKING_VIEW),
             new Rule(GET, "/api/shipments", SHIPMENT_VIEW),
+            new Rule(POST, "/api/shipments", SHIPMENT_EXECUTE),
             new Rule(GET, "/api/shipments/{id}", SHIPMENT_VIEW),
             new Rule(POST, "/api/shipments/{id}/confirm", SHIPMENT_EXECUTE),
             new Rule(POST, "/api/shipments/{id}/dispatch", SHIPMENT_EXECUTE),
+            new Rule(POST, "/api/shipments/{id}/cancel", ORDER_CANCEL),
             new Rule(GET, "/api/inventories", INVENTORY_VIEW),
+            new Rule(POST, "/api/inventories", INVENTORY_EXECUTE),
             new Rule(GET, "/api/inventories/{id}", INVENTORY_VIEW),
             new Rule(POST, "/api/inventories/{id}/counts", INVENTORY_EXECUTE),
             new Rule(POST, "/api/inventories/{id}/adjust", INVENTORY_ADJUST),
+            new Rule(POST, "/api/inventories/{id}/cancel", INVENTORY_EXECUTE, INVENTORY_ADJUST),
             new Rule(GET, "/api/tasks", TASK_VIEW),
             new Rule(GET, "/api/tasks/{id}", TASK_VIEW),
             new Rule(POST, "/api/tasks/{id}/cancel", TASK_CANCEL),

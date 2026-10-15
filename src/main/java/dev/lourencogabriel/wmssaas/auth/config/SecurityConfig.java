@@ -80,12 +80,14 @@ public class SecurityConfig {
 
             .authorizeHttpRequests(auth -> {
                 auth.requestMatchers(CorsUtils::isPreFlightRequest).permitAll();
+                auth.requestMatchers(HttpMethod.GET, "/health", "/health/ready").permitAll();
                 auth.requestMatchers(HttpMethod.POST,
                         "/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-password",
                         "/api/auth/challenge/verify", "/api/auth/refresh", "/api/auth/logout").permitAll();
                 auth.requestMatchers(HttpMethod.GET, "/api/users/me").authenticated();
                 for (var rule : WmsEndpointPolicy.RULES) {
-                    auth.requestMatchers(rule.method(), rule.pattern()).hasAuthority(rule.permission().authority());
+                    auth.requestMatchers(rule.method(), rule.pattern()).hasAnyAuthority(rule.permissions().stream()
+                            .map(dev.lourencogabriel.wmssaas.auth.authorization.WmsPermission::authority).toArray(String[]::new));
                 }
                 auth.anyRequest().denyAll();
             })

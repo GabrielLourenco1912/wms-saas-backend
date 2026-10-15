@@ -115,8 +115,8 @@ class WmsSecurityIntegrationTest {
                 .filter(r -> !r.pattern().startsWith("/api/users") && !r.pattern().startsWith("/api/profiles")
                         && !r.pattern().startsWith("/api/auth") && !r.pattern().equals("/api/permissions"))
                 .flatMap(r -> Stream.of(
-                        new AccessCase(r, "OPERADOR", OPERATOR_PERMISSIONS.contains(r.permission())),
-                        new AccessCase(r, "GESTOR", !OPERATOR_EXECUTION.contains(r.permission()))));
+                        new AccessCase(r, "OPERADOR", r.permissions().stream().anyMatch(OPERATOR_PERMISSIONS::contains)),
+                        new AccessCase(r, "GESTOR", r.permissions().stream().anyMatch(p -> !OPERATOR_EXECUTION.contains(p)))));
     }
 
     @ParameterizedTest

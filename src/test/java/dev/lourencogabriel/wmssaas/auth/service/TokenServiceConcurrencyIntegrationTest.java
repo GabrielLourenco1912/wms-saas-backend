@@ -16,6 +16,8 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
@@ -41,11 +43,18 @@ class TokenServiceConcurrencyIntegrationTest {
     private static final String USER_EMAIL = "concurrency@example.com";
 
     @Container
-    @ServiceConnection
+    @ServiceConnection(type = org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails.class)
     private static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4.0")
             .withDatabaseName("wms_saas_test")
             .withUsername("test")
             .withPassword("test");
+
+    @DynamicPropertySource
+    static void migrationCredentials(DynamicPropertyRegistry registry) {
+        registry.add("spring.flyway.url", MYSQL::getJdbcUrl);
+        registry.add("spring.flyway.user", () -> "root");
+        registry.add("spring.flyway.password", MYSQL::getPassword);
+    }
 
     @Autowired
     private AccessProfileRepository profileRepository;
