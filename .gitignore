@@ -36,3 +36,9 @@ build/
 ### Agents ###
 .agents/
 .codex/
+
+# Local environment configuration
+.env
+.env.*
+!.env.example
+!.env.*.example

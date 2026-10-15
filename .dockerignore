@@ -1,0 +1,14 @@
+# The backend image only needs the POM and production sources.
+**
+!pom.xml
+!src/
+src/**
+!src/main/
+!src/main/**
+
+# Keep environment files and local credentials out even inside resources.
+**/.env
+**/.env.*
+**/*.key
+**/*.keystore
+**/*.jks
