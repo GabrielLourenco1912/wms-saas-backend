@@ -6,6 +6,8 @@ A organização por módulos, baseada em `inatback/main`, e as orientações par
 
 A matriz por RN/RF e os contratos de autorização das rotas estão em [docs/AUTORIZACAO_WMS.md](docs/AUTORIZACAO_WMS.md).
 
+Para construir os clientes web e mobile, consulte o [guia de integração da API](docs/API_CLIENTS.md): catálogo completo de endpoints, payloads, respostas, autenticação, permissões, filtros e exemplos de consumo.
+
 ## Executar
 
 Configurar `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` e `JWT_SECRET` (ao menos 32 bytes UTF-8). O emissor pode ser definido por `JWT_ISSUER`; o padrão é `https://api.wmssaas.com`.
