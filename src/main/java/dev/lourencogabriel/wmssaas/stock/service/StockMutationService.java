@@ -24,6 +24,10 @@ import dev.lourencogabriel.wmssaas.warehouse.repository.ZoneRepository;
 
 import dev.lourencogabriel.wmssaas.web.exception.BusinessRuleException;
 import dev.lourencogabriel.wmssaas.web.exception.ResourceNotFoundException;
+import dev.lourencogabriel.wmssaas.inventory.repository.InventoryRepository;
+import dev.lourencogabriel.wmssaas.order.repository.WarehouseOrderRepository;
+import dev.lourencogabriel.wmssaas.order.repository.OrderItemRepository;
+import dev.lourencogabriel.wmssaas.outbound.repository.ShipmentItemRepository;
 
 import lombok.RequiredArgsConstructor;
 import jakarta.persistence.EntityManager;
@@ -53,9 +57,14 @@ public class StockMutationService {
     private final StockBlockRepository blocks;
     private final StockTransactionRepository transactions;
     private final TaskHistoryRepository histories;
+    private final InventoryRepository inventories;
+    private final WarehouseOrderRepository orders;
+    private final OrderItemRepository orderItems;
+    private final ShipmentItemRepository shipmentItems;
 
     public Warehouse lockWarehouse(String id) {
         Warehouse warehouse = warehouses.findByIdForUpdate(id).orElseThrow(() -> new ResourceNotFoundException("Warehouse", id));
+        entityManager.refresh(warehouse, LockModeType.PESSIMISTIC_WRITE);
         if (!Boolean.TRUE.equals(warehouse.getActive())) throw new BusinessRuleException("Warehouse is inactive");
         return warehouse;
     }
@@ -81,8 +90,12 @@ public class StockMutationService {
         return ids.stream().filter(Objects::nonNull).distinct().sorted().map(this::lockStock).toList();
     }
     public List<Position> lockPositions(Collection<String> ids) {
-        return ids.stream().filter(Objects::nonNull).distinct().sorted().map(id -> positions.findByIdForUpdate(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Position", id))).toList();
+        return ids.stream().filter(Objects::nonNull).distinct().sorted().map(id -> {
+            Position position = positions.findByIdForUpdate(id).orElseThrow(() -> new ResourceNotFoundException("Position", id));
+            entityManager.flush();
+            entityManager.refresh(position, LockModeType.PESSIMISTIC_WRITE);
+            return position;
+        }).toList();
     }
     public BigDecimal remaining(StockReservation reservation) {
         return reservation.getReservedQuantity().subtract(reservation.getConsumedQuantity()).subtract(reservation.getReleasedQuantity());
@@ -98,13 +111,18 @@ public class StockMutationService {
     }
     public BigDecimal available(Stock stock) {
         Position position = position(stock.getPositionId());
-        if (!"ARMAZENAGEM".equals(position.getPurpose()) || isBlocked(stock)) return BigDecimal.ZERO;
-        if (stock.getLpnId() != null && lpns.findById(stock.getLpnId()).map(l -> l.getOutboundOrderId() != null).orElse(false)) return BigDecimal.ZERO;
+        if (!"ARMAZENAGEM".equals(position.getPurpose()) || isBlocked(stock) || !Boolean.TRUE.equals(product(stock.getProductId()).getActive())) return BigDecimal.ZERO;
+        if (stock.getLpnId() == null || lpns.findById(stock.getLpnId()).map(l -> l.getOutboundOrderId() != null
+                || "EXPEDIDO".equals(l.getStatus()) || !Objects.equals(l.getPositionId(), stock.getPositionId())).orElse(true)) return BigDecimal.ZERO;
         return stock.getQuantity().subtract(reserved(stock)).max(BigDecimal.ZERO);
     }
     public void ensureMovable(Stock stock) {
         if (isBlocked(stock)) throw new BusinessRuleException("Stock or position is blocked");
         if (stock.getQuantity().signum() <= 0) throw new BusinessRuleException("There is no physical stock to move");
+        if (stock.getLpnId() == null || lpns.findById(stock.getLpnId()).map(l -> "EXPEDIDO".equals(l.getStatus())
+                || !Objects.equals(stock.getPositionId(), l.getPositionId())).orElse(true)) {
+            throw new BusinessRuleException("Stock requires an active LPN in the same position");
+        }
     }
     public void ensureDestination(Position position) {
         if (isPositionUnavailable(position) || !blocks.findByPositionIdAndActive(position.getId(), true).isEmpty()) {
@@ -114,7 +132,13 @@ public class StockMutationService {
         if (!Boolean.TRUE.equals(zone.getActive())) throw new BusinessRuleException("Destination zone is inactive");
     }
     private boolean isPositionUnavailable(Position p) {
-        return !Boolean.TRUE.equals(p.getActive()) || p.getStatus() == null || p.getStatus().startsWith("BLOQUE") || p.getStatus().startsWith("INATIV");
+        return !Boolean.TRUE.equals(p.getActive()) || p.getStatus() == null || p.getStatus().startsWith("BLOQUE") || p.getStatus().startsWith("INATIV")
+                || inventories.existsByPositionIdAndStatusIn(p.getId(), List.of("PENDENTE", "EM_CONTAGEM"));
+    }
+    public void ensureNoActiveInventory(String positionId) {
+        if (inventories.existsByPositionIdAndStatusIn(positionId,List.of("PENDENTE","EM_CONTAGEM"))) {
+            throw new BusinessRuleException("Finish or cancel the active inventory before moving or compensating this position");
+        }
     }
     public void requireCapacity(Position position, BigDecimal addedWeight, BigDecimal addedVolume) {
         BigDecimal weight = BigDecimal.ZERO, volume = BigDecimal.ZERO;
@@ -205,7 +229,11 @@ public class StockMutationService {
     public void moveWholeLpn(Lpn lpn, Position destination, String userId, String operationId, String taskId, String type) {
         ensureDestination(destination);
         if (Objects.equals(lpn.getPositionId(), destination.getId())) throw new BusinessRuleException("Origin and destination positions are equal");
-        if (lpn.getOutboundOrderId() != null) throw new BusinessRuleException("Prepared outbound goods require the order flow");
+        boolean returning = lpn.getOutboundOrderId() != null;
+        if (returning) {
+            ensureReturnableLpn(lpn);
+            if (!"ARMAZENAGEM".equals(destination.getPurpose())) throw new BusinessRuleException("Cancelled outbound goods must return to storage");
+        }
         String sourcePosition = lpn.getPositionId();
         if (sourcePosition == null || !warehouseForPosition(sourcePosition).equals(warehouseForPosition(destination.getId()))) {
             throw new BusinessRuleException("Internal transfers must remain in the same warehouse");
@@ -224,12 +252,32 @@ public class StockMutationService {
             }
         }
         requireCapacity(destination, weight, volume);
+        if (returning) {
+            for (var item : orderItems.findByOrderId(lpn.getOutboundOrderId())) {
+                BigDecimal quantity = balances.stream().filter(s -> item.getProductId().equals(s.getProductId()))
+                        .map(Stock::getQuantity).reduce(BigDecimal.ZERO, BigDecimal::add);
+                if (quantity.compareTo(item.getPickedQuantity()) > 0) throw new BusinessRuleException("Return exceeds the prepared order quantity");
+                item.setPickedQuantity(item.getPickedQuantity().subtract(quantity));
+                orderItems.save(item);
+            }
+        }
         for (Stock stock : balances) {
             String beforePosition = stock.getPositionId(); stock.setPositionId(destination.getId()); stocks.save(stock); refreshBlockStatus(stock);
-            if (stock.getQuantity().signum() > 0) append(stock, type, stock.getQuantity(), stock.getQuantity(), stock.getQuantity(), beforePosition,
+            if (stock.getQuantity().signum() > 0) append(stock, returning ? "RETORNO" : type, stock.getQuantity(), stock.getQuantity(), stock.getQuantity(), beforePosition,
                     destination.getId(), userId, operationId, taskId, null, null, null, null, null, null);
         }
-        lpn.setPositionId(destination.getId()); lpn.setUpdatedAt(Instant.now()); lpns.save(lpn);
+        lpn.setPositionId(destination.getId()); lpn.setUpdatedAt(Instant.now());
+        if (returning) { lpn.setOutboundOrderId(null); lpn.setStatus("ATIVO"); }
+        lpns.save(lpn);
+    }
+    public void ensureReturnableLpn(Lpn lpn) {
+        var order = orders.findById(lpn.getOutboundOrderId()).orElseThrow(() -> new BusinessRuleException("Outbound order is unavailable"));
+        if (!"CANCELADO".equals(order.getStatus()) || "EXPEDIDO".equals(lpn.getStatus())) {
+            throw new BusinessRuleException("Cancel the outbound order before returning prepared goods");
+        }
+        if (shipmentItems.findByLpnId(lpn.getId()).stream().anyMatch(i -> !"CANCELADO".equals(i.getStatus()))) {
+            throw new BusinessRuleException("Cancel active shipments before returning prepared goods");
+        }
     }
     public void dispatchBalance(Stock stock, BigDecimal quantity, String userId, String operationId, String taskId, String shipmentItemId) {
         positive(quantity); ensureMovable(stock);

@@ -70,6 +70,14 @@ public class StockService {
     @Transactional(readOnly = true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'STOCK_VIEW')")
     public StockView findStock(String id) { return view(stock(id)); }
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'STOCK_VIEW')")
+    public PageResponse<StockBlock> blocks(String warehouseId, Boolean active, Pageable pageable) {
+        Specification<StockBlock> spec = (r, q, b) -> b.conjunction();
+        if (warehouseId != null) spec = spec.and((r, q, b) -> b.equal(r.get("warehouseId"), warehouseId));
+        if (active != null) spec = spec.and((r, q, b) -> b.equal(r.get("active"), active));
+        return PageResponse.from(blocks.findAll(spec, pageable));
+    }
     private Stock stock(String id) { return stocks.findById(id).orElseThrow(() -> new ResourceNotFoundException("Stock", id)); }
     public StockView view(Stock stock) {
         Product product = mutation.product(stock.getProductId());
@@ -183,13 +191,20 @@ public class StockService {
             if ((request.lpnId() == null) == (request.stockId() == null)) throw new BusinessRuleException("Specify exactly one LPN or stock balance");
             Lpn lpn; Stock stock = null;
             if (request.lpnId() != null) lpn = lpns.findById(request.lpnId()).orElseThrow(() -> new ResourceNotFoundException("LPN",request.lpnId()));
-            else { stock = stock(request.stockId()); lpn = lpns.findById(stock.getLpnId()).orElseThrow(() -> new BusinessRuleException("Stock requires an LPN")); }
+            else {
+                stock = stock(request.stockId());
+                if (stock.getLpnId() == null) throw new BusinessRuleException("Stock requires an LPN");
+                lpn = lpns.findById(stock.getLpnId()).orElseThrow(() -> new BusinessRuleException("Stock requires an LPN"));
+            }
             mutation.lockWarehouse(mutation.warehouseForPosition(lpn.getPositionId()));
             mutation.lockPositions(List.of(lpn.getPositionId(),request.destinationPositionId()));
             entityManager.refresh(lpn,LockModeType.PESSIMISTIC_WRITE);
             Position destination = mutation.position(request.destinationPositionId()); mutation.ensureDestination(destination);
             if (!mutation.warehouseForPosition(lpn.getPositionId()).equals(mutation.warehouseForPosition(destination.getId()))) throw new BusinessRuleException("Cross-warehouse transfer is not allowed");
-            if (lpn.getOutboundOrderId() != null) throw new BusinessRuleException("Prepared outbound LPN requires the order flow");
+            if (lpn.getOutboundOrderId() != null) {
+                if (stock != null) throw new BusinessRuleException("Prepared goods must return as a complete LPN");
+                mutation.ensureReturnableLpn(lpn);
+            }
             BigDecimal quantity;
             Lpn destinationLpn = null;
             if (stock != null) {
@@ -222,6 +237,7 @@ public class StockService {
             if (!"PENDENTE".equals(task.getStatus())) throw new BusinessRuleException("Transfer is not pending");
             mutation.lockPositions(List.of(task.getOriginPositionId(),task.getDestinationPositionId()));
             Lpn source = lpns.findByIdForUpdate(task.getLpnId()).orElseThrow();
+            if (!Objects.equals(source.getPositionId(),task.getOriginPositionId())) throw new BusinessRuleException("LPN moved since the transfer was planned; create a new transfer");
             StockMutationService.requireCode(request.scannedLpnCode(),source.getTrackingCode(),"LPN");
             StockMutationService.requireCode(request.scannedOriginCode(),mutation.position(task.getOriginPositionId()).getCode(),"origin position");
             StockMutationService.requireCode(request.scannedDestinationCode(),mutation.position(task.getDestinationPositionId()).getCode(),"destination position");
@@ -278,7 +294,13 @@ public class StockService {
         String actor = currentActorId();
         return operations.execute(key,List.of(id,request),actor,"COMPENSAR_MOVIMENTO",StockTransaction.class,op -> {
             StockTransaction original = transactionWithoutAuthorization(id); Stock stock = stock(original.getStockId());
+            if (stock.getLpnId() == null) throw new BusinessRuleException("Reconcile unlabelled stock through inventory before compensation");
             mutation.lockWarehouse(mutation.warehouseForPosition(stock.getPositionId())); mutation.lockProduct(stock.getProductId());
+            entityManager.refresh(stock);
+            mutation.ensureNoActiveInventory(stock.getPositionId());
+            if (stock.getLpnId() != null && lpns.findById(stock.getLpnId()).map(l -> "EXPEDIDO".equals(l.getStatus())).orElse(false)) {
+                throw new BusinessRuleException("Dispatched goods must return through a documented receipt");
+            }
             mutation.lockPositions(List.of(stock.getPositionId())); stock = mutation.lockStock(stock.getId());
             if (!Set.of("ENTRADA","SAIDA","AJUSTE","COMPENSACAO").contains(original.getMovementType()) || original.getQuantity().signum() == 0) throw new BusinessRuleException("Relocations must be corrected by a traceable reverse transfer");
             StockMutationService.requireCode(request.scannedPositionCode(),mutation.position(stock.getPositionId()).getCode(),"position");
