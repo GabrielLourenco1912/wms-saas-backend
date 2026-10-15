@@ -1,13 +1,14 @@
 package dev.lourencogabriel.wmssaas.stock.controller;
 
-import dev.lourencogabriel.wmssaas.shared.api.PageResponse;
+import dev.lourencogabriel.wmssaas.shared.api.*;
+import dev.lourencogabriel.wmssaas.stock.dto.StockSearchFilters;
+import dev.lourencogabriel.wmssaas.stock.service.StockQueryService;
 import dev.lourencogabriel.wmssaas.stock.dto.StockBlockDtos;
 import dev.lourencogabriel.wmssaas.stock.dto.StockDtos.*;
 import dev.lourencogabriel.wmssaas.stock.service.StockService;
 import dev.lourencogabriel.wmssaas.web.dto.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -17,23 +18,35 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class StockController {
     private final StockService service;
+    private final StockQueryService queries;
 
-    @GetMapping("/stock")
+    @GetMapping({"/stock","/search/stock"})
     @PreAuthorize("@wmsAuthorization.can(authentication, 'STOCK_VIEW')")
-    public ApiResponse<PageResponse<StockView>> stock(@RequestParam(required=false) String productId,
-            @RequestParam(required=false) String positionId, @RequestParam(required=false) String lpnId,
-            @RequestParam(required=false) String warehouseId, Pageable pageable) {
-        return new ApiResponse<>(service.findStock(productId,positionId,lpnId,warehouseId,pageable),"Stock balances");
+    public ApiResponse<PageResponse<StockView>> stock(@Valid @ModelAttribute PageQuery query,
+            @Valid @ModelAttribute StockSearchFilters.Balances filters) {
+        return new ApiResponse<>(queries.balances(query,filters),"Stock balances");
+    }
+    @GetMapping("/lookups/stock")
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'STOCK_VIEW')")
+    public ApiResponse<PageResponse<LookupOption>> stockLookup(@Valid @ModelAttribute LookupQuery query,
+            @Valid @ModelAttribute StockSearchFilters.Balances filters) {
+        return new ApiResponse<>(queries.balanceLookup(query,filters),"Stock options");
     }
     @GetMapping("/stock/{id}")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'STOCK_VIEW')")
     public ApiResponse<StockView> stock(@PathVariable String id) { return new ApiResponse<>(service.findStock(id),"Stock balance"); }
 
-    @GetMapping("/stock-blocks")
+    @GetMapping({"/stock-blocks","/search/stock-blocks"})
     @PreAuthorize("@wmsAuthorization.can(authentication, 'STOCK_VIEW')")
-    public ApiResponse<PageResponse<StockBlockDtos.Response>> blocks(@RequestParam(required=false) String warehouseId,
-            @RequestParam(required=false) Boolean active, Pageable pageable) {
-        return new ApiResponse<>(service.blocks(warehouseId,active,pageable).map(StockBlockDtos.Response::from),"Stock blocks");
+    public ApiResponse<PageResponse<StockBlockDtos.Response>> blocks(@Valid @ModelAttribute PageQuery query,
+            @Valid @ModelAttribute StockSearchFilters.Blocks filters) {
+        return new ApiResponse<>(queries.blocks(query,filters),"Stock blocks");
+    }
+    @GetMapping("/lookups/stock-blocks")
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'STOCK_VIEW')")
+    public ApiResponse<PageResponse<LookupOption>> blockLookup(@Valid @ModelAttribute LookupQuery query,
+            @Valid @ModelAttribute StockSearchFilters.Blocks filters) {
+        return new ApiResponse<>(queries.blockLookup(query,filters),"Stock block options");
     }
     @PostMapping("/stock/{id}/block")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'STOCK_BLOCK')")
