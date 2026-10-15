@@ -6,12 +6,14 @@ import dev.lourencogabriel.wmssaas.product.model.Product;
 import dev.lourencogabriel.wmssaas.stock.model.Stock;
 import dev.lourencogabriel.wmssaas.stock.repository.StockRepository;
 import dev.lourencogabriel.wmssaas.warehouse.dto.WarehouseDtos;
+import dev.lourencogabriel.wmssaas.shared.api.PageQuery;
+import dev.lourencogabriel.wmssaas.shared.persistence.SearchSpecifications;
 import dev.lourencogabriel.wmssaas.web.exception.BusinessRuleException;
 import dev.lourencogabriel.wmssaas.web.exception.ResourceNotFoundException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.*;
+import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -27,14 +29,34 @@ public class WarehouseService {
     private final StockRepository stocks;
     private final EntityManager em;
 
-    public Page<Warehouse> warehouses(Pageable p) { return warehouses.findAll(page(p)); }
-
-    public Page<Zone> zones(String warehouseId, Pageable p) {
-        return zones.findAll((r,q,b)->warehouseId==null?b.conjunction():b.equal(r.get("warehouseId"),warehouseId),page(p));
+    public Page<Warehouse> warehouses(PageQuery query, Boolean active) {
+        return warehouses.findAll(SearchSpecifications.<Warehouse>text(query.getQ(), "id", "name", "taxId", "address")
+                .and(SearchSpecifications.equal("active", active)), query.toPageable());
     }
 
-    public Page<Position> positions(String zoneId, Pageable p) {
-        return positions.findAll((r,q,b)->zoneId==null?b.conjunction():b.equal(r.get("zoneId"),zoneId),page(p));
+    public Page<Zone> zones(PageQuery query, String warehouseId, Boolean active) {
+        return zones.findAll(SearchSpecifications.<Zone>text(query.getQ(), "id", "name", "controlType", "warehouseId")
+                .and(SearchSpecifications.equal("warehouseId", warehouseId))
+                .and(SearchSpecifications.equal("active", active)), query.toPageable());
+    }
+
+    public Page<Position> positions(PageQuery query, String zoneId, String warehouseId, String status,
+                                    String type, String purpose, Boolean active) {
+        var specification = SearchSpecifications.<Position>text(query.getQ(), "id", "code", "type", "status", "purpose", "zoneId")
+                .and(SearchSpecifications.equal("zoneId", zoneId))
+                .and(SearchSpecifications.equal("status", status))
+                .and(SearchSpecifications.equal("type", type))
+                .and(SearchSpecifications.equal("purpose", purpose))
+                .and(SearchSpecifications.equal("active", active));
+        if (warehouseId != null && !warehouseId.isBlank()) {
+            specification = specification.and((root, criteria, builder) -> {
+                var subquery = criteria.subquery(String.class);
+                var zone = subquery.from(Zone.class);
+                subquery.select(zone.get("id")).where(builder.equal(zone.get("warehouseId"), warehouseId.trim()));
+                return root.get("zoneId").in(subquery);
+            });
+        }
+        return positions.findAll(specification, query.toPageable());
     }
 
     @Transactional
@@ -86,10 +108,6 @@ public class WarehouseService {
         T found=em.find(type,id,LockModeType.PESSIMISTIC_WRITE);
         if(found==null)throw new ResourceNotFoundException(type.getSimpleName(),id);
         return found;
-    }
-
-    private static Pageable page(Pageable p) {
-        return PageRequest.of(Math.max(0,p.getPageNumber()),Math.min(200,p.getPageSize()),Sort.by("id"));
     }
 
     private static void require(boolean ok,String message) { if(!ok)throw new BusinessRuleException(message); }
