@@ -22,5 +22,8 @@ public interface ProductRepository extends JpaRepository<Product, String>, JpaSp
 
     boolean existsBySku(String sku);
 
+    @Query("select (count(p) > 0) from Product p where lower(p.sku) = lower(:sku) and (:excludedId is null or p.id <> :excludedId)")
+    boolean existsSkuConflictIgnoreCase(@Param("sku") String sku, @Param("excludedId") String excludedId);
+
     List<Product> findByCategoryId(String categoryId);
 }

@@ -23,4 +23,10 @@ public interface ProductPackagingRepository extends JpaRepository<ProductPackagi
     Optional<ProductPackaging> findByBarcode(String barcode);
 
     boolean existsByBarcode(String barcode);
+
+    @Query("select (count(p) > 0) from ProductPackaging p where lower(p.barcode) = lower(:barcode) and (:excludedId is null or p.id <> :excludedId)")
+    boolean existsBarcodeConflictIgnoreCase(@Param("barcode") String barcode, @Param("excludedId") String excludedId);
+
+    @Query("select (count(p) > 0) from ProductPackaging p where lower(p.barcode) = lower(:barcode) and (:productId is null or p.productId <> :productId)")
+    boolean existsBarcodeForAnotherProductIgnoreCase(@Param("barcode") String barcode, @Param("productId") String productId);
 }

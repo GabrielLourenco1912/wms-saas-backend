@@ -31,7 +31,7 @@ public class ProductService {
     public Page<Product> products(Pageable p) { return products.findAll(page(p)); }
 
     public List<ProductPackaging> packages(String productId) {
-        get(Product.class,productId);return packages.findAll().stream().filter(x->productId.equals(x.getProductId())).toList();
+        get(Product.class,productId);return packages.findByProductId(productId);
     }
 
     @Transactional
@@ -44,9 +44,9 @@ public class ProductService {
     public Product product(String id,ProductDtos.ProductRequest r) {
         Category category=get(Category.class,r.categoryId());active(category.getActive(),"Category");
         Product e=id==null?new Product():lock(Product.class,id);
-        require(products.findAll().stream().noneMatch(x->!Objects.equals(x.getId(),id)&&r.sku().trim().equalsIgnoreCase(x.getSku())),"SKU is already used");
-        require(packages.findAll().stream().noneMatch(x->r.sku().trim().equalsIgnoreCase(x.getBarcode())&&!Objects.equals(x.getProductId(),id)),"SKU conflicts with another product barcode");
-        boolean hasStock=id!=null&&stocks.findAll().stream().anyMatch(x->id.equals(x.getProductId()));
+        require(!products.existsSkuConflictIgnoreCase(r.sku().trim(),id),"SKU is already used");
+        require(!packages.existsBarcodeForAnotherProductIgnoreCase(r.sku().trim(),id),"SKU conflicts with another product barcode");
+        boolean hasStock=id!=null&&!stocks.findByProductId(id).isEmpty();
         if(hasStock) {
             require(r.baseUnit().trim().equals(e.getBaseUnit())&&r.unitWeightKg().compareTo(e.getUnitWeightKg())==0&&r.unitVolumeM3().compareTo(e.getUnitVolumeM3())==0
                     &&r.lotControlled().equals(e.getLotControlled())&&r.expiryControlled().equals(e.getExpiryControlled()),"Referenced product unit, physical parameters and traceability cannot change");
@@ -62,8 +62,8 @@ public class ProductService {
         require(id==null||productId.equals(e.getProductId()),"Packaging does not belong to this product");
         String barcode=normalized(r.barcode());
         if(barcode!=null){
-            require(packages.findAll().stream().noneMatch(x->!Objects.equals(x.getId(),id)&&barcode.equalsIgnoreCase(x.getBarcode())),"Barcode is already used");
-            require(products.findAll().stream().noneMatch(x->!productId.equals(x.getId())&&barcode.equalsIgnoreCase(x.getSku())),"Barcode conflicts with another SKU");
+            require(!packages.existsBarcodeConflictIgnoreCase(barcode,id),"Barcode is already used");
+            require(!products.existsSkuConflictIgnoreCase(barcode,productId),"Barcode conflicts with another SKU");
         }
         if(id!=null)require(r.conversionFactor().compareTo(e.getConversionFactor())==0,"Create another packaging instead of changing an existing conversion factor");
         e.setProductId(productId);e.setType(r.type().trim());e.setConversionFactor(r.conversionFactor());e.setBarcode(barcode);e.setWeightKg(r.weightKg());e.setVolumeM3(r.volumeM3());e.setActive(r.active());
