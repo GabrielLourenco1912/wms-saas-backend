@@ -11,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.math.BigDecimal;
 import java.util.*;
 
 @Service
@@ -26,7 +25,10 @@ public class PartnerService {
     @Transactional
     public Partner partner(String id,PartnerDtos.PartnerRequest r) {
         Partner e=id==null?new Partner():lock(Partner.class,id);String tax=normalized(r.taxId());
-        if(tax!=null)require(partners.findAll().stream().noneMatch(x->!Objects.equals(x.getId(),id)&&tax.equals(x.getTaxId())),"Partner tax ID is already used");
+        if (tax != null) {
+            boolean duplicate = id == null ? partners.existsByTaxId(tax) : partners.existsByTaxIdAndIdNot(tax, id);
+            require(!duplicate, "Partner tax ID is already used");
+        }
         e.setLegalName(r.legalName().trim());e.setTaxId(tax);e.setType(r.type());e.setActive(r.active());return partners.saveAndFlush(e);
     }
 

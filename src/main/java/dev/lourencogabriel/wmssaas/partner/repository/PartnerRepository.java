@@ -19,4 +19,8 @@ public interface PartnerRepository extends JpaRepository<Partner, String>, JpaSp
     default Optional<Partner> lockById(String id) { return findByIdForUpdate(id); }
 
     Optional<Partner> findByTaxId(String taxId);
+
+    boolean existsByTaxId(String taxId);
+
+    boolean existsByTaxIdAndIdNot(String taxId, String id);
 }

@@ -2,7 +2,6 @@ package dev.lourencogabriel.wmssaas.partner.dto;
 
 import dev.lourencogabriel.wmssaas.partner.model.Partner;
 import jakarta.validation.constraints.*;
-import java.math.BigDecimal;
 import java.time.Instant;
 
 public final class PartnerDtos {
