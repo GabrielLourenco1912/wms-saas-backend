@@ -47,6 +47,8 @@ Os conjuntos abaixo são os valores iniciais da migração V1 consolidada de des
 
 As consultas operacionais concedidas ao gestor permitem acompanhar os processos. As consultas de estrutura, produtos, saldo e tarefas concedidas ao operador fornecem os dados necessários à execução. Elas não autorizam alterar os cadastros.
 
+Os cadastros de categorias (`/api/categories`) usam `PRODUCT_VIEW/CREATE/EDIT`, como os produtos. Clientes e fornecedores (`/api/partners`) usam `ORDER_VIEW/CREATE/EDIT`, mantendo o contrato de permissões do cadastro de parceiros existente. Ambas as famílias de rotas constam explicitamente de `WmsEndpointPolicy`; a negação padrão continua protegendo rotas sem classificação. Os testes de integração de cadastros exercitam os controllers de produção, incluindo a revogação de permissões com um JWT previamente emitido.
+
 ## Rastreabilidade das regras de negócio
 
 | RN | Regra de autorização aplicada |

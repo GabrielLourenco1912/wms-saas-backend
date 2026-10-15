@@ -126,6 +126,32 @@ pacote não significa que o fluxo esteja concluído ou homologado. Recebimento,
 estoque e saída ainda têm integração HTTP pendente; inventário possui a base de
 persistência, sem o fluxo completo. A reorganização não conclui essas funções.
 
+### Entrega limitada: APIs de cadastro
+
+A etapa seguinte à reorganização concentra-se nos cadastros de armazéns, zonas,
+posições, categorias, produtos, embalagens e parceiros. Categorias e parceiros
+passaram a ter as rotas incluídas na política de autorização. As criações usam
+HTTP 201 e as respostas dos controllers declaram os DTOs correspondentes.
+
+Os testes de integração desses módulos usam controllers reais, JWTs assinados,
+H2 e rollback por teste. Verificam persistência por chamadas HTTP, permissões,
+validação, duplicidades e regras de alteração de cadastros com estoque associado.
+São evidências específicas dos cadastros relacionados às RF003/RF004 e RN012;
+não constituem validação integral dessas regras ou dos fluxos de movimentação.
+
+Os próximos trabalhos permanecem delimitados:
+
+1. Fechar recebimento e putaway com controllers, autorização e testes que sigam
+   uma conferência até a armazenagem, incluindo reenvio e falhas transacionais.
+2. Integrar consultas e comandos de estoque, transferências, bloqueios e auditoria.
+3. Fechar ondas, picking, divergências, cancelamentos e expedição.
+4. Implementar contagem e reconciliação de inventário.
+5. Validar concorrência em MySQL, backup/restauração e desempenho; integrar os
+   clientes e registrar as evidências pendentes do artigo.
+
+As rotas de saúde continuam pendentes de classificação na política HTTP. Esta
+entrega não altera o esquema e não requer uma nova migration Flyway.
+
 Na continuação, implementar cada caso de uso completo dentro do módulo:
 
 1. Conferir a RN/RF e o contrato de permissão em `WmsEndpointPolicy`.
@@ -152,3 +178,7 @@ Validação da reorganização em 15/10/2026: 209 testes encontrados, 208 execut
 sem falhas e 1 ignorado por indisponibilidade de acesso ao Docker
 (`TokenServiceConcurrencyIntegrationTest`). Foram exercitados o contexto Spring,
 o mapeamento JPA, as migrations, a persistência operacional e a matriz de segurança.
+
+Validação da entrega de cadastros: 248 testes registrados, 247 sem falhas e 1
+MySQL/Testcontainers ignorado; 23 testes novos exercitam APIs reais e 16 casos
+adicionais ampliam a matriz de permissões de categorias/parceiros.

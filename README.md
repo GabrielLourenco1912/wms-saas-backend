@@ -42,6 +42,25 @@ O contexto do usuário está em `GET /api/users/me`. Administração usa `/api/u
 
 Os contratos de autorização dos módulos logísticos já estão definidos. Há modelos, repositórios e serviços operacionais em desenvolvimento, com controllers de cadastros. A integração HTTP dos demais fluxos e a validação completa das RNs/RFs ainda precisam ser concluídas; ver [estado e continuação](docs/ARQUITETURA.md#estado-desta-reorganização-e-continuação).
 
+## Cadastros disponíveis
+
+As coleções abaixo oferecem listagem paginada por `GET`, criação por `POST`, consulta por `GET /{id}` e edição por `PUT /{id}`:
+
+| Recurso | Coleção | Permissões de consulta/criação/edição |
+| --- | --- | --- |
+| Armazéns | `/api/warehouses` | `WAREHOUSE_VIEW/CREATE/EDIT` |
+| Zonas | `/api/zones` | `WAREHOUSE_VIEW/CREATE/EDIT` |
+| Posições | `/api/positions` | `WAREHOUSE_VIEW/CREATE/EDIT` |
+| Categorias | `/api/categories` | `PRODUCT_VIEW/CREATE/EDIT` |
+| Produtos | `/api/products` | `PRODUCT_VIEW/CREATE/EDIT` |
+| Clientes e fornecedores | `/api/partners` | `ORDER_VIEW/CREATE/EDIT` |
+
+Embalagens usam `GET/POST /api/products/{productId}/packages` e `PUT /api/products/{productId}/packages/{packageId}`, com permissões de produto. A listagem de embalagens retorna uma lista, sem paginação. As listagens de zonas e posições aceitam os filtros `warehouseId` e `zoneId`, respectivamente.
+
+Os requests e responses estão nos DTOs dos módulos `warehouse`, `product` e `partner`. Criações retornam HTTP **201**, consultas/edições **200**, dados inválidos **400**, recurso ausente **404** e violação de regra de negócio **422**. Conflitos de restrição do banco retornam **409**. A inativação usa `active: false` na edição, preservando os vínculos históricos.
+
+As permissões são verificadas na política HTTP e nos métodos dos controllers. O operador pode consultar estrutura e produtos; não pode alterar esses cadastros nem gerenciar parceiros com o perfil inicial.
+
 ## Verificação
 
 ```bash
@@ -49,7 +68,7 @@ Os contratos de autorização dos módulos logísticos já estão definidos. Há
 ./mvnw -DskipTests package
 ```
 
-Os testes de integração cobrem a matriz de autorização com JWTs assinados, mudanças de conta/perfil/permissões, códigos de uso único, bloqueio, recuperação, fluxo web/mobile, migrations iniciais e persistência operacional. O teste MySQL de rotação concorrente usa Testcontainers e é ignorado automaticamente quando Docker não está disponível. SMTP é substituído por um sender de teste; a entrega real depende da configuração do ambiente.
+Os testes de integração cobrem a matriz de autorização com JWTs assinados, mudanças de conta/perfil/permissões, códigos de uso único, bloqueio, recuperação, fluxo web/mobile, migrations iniciais, persistência operacional e operações reais das APIs de cadastro. Os testes de cadastros usam H2, controllers de produção e JWTs assinados, sem rotas de apoio. O teste MySQL de rotação concorrente usa Testcontainers e é ignorado automaticamente quando Docker não está disponível. SMTP é substituído por um sender de teste nos testes que enviam e-mail; a entrega real depende da configuração do ambiente.
 
 ## Ambiente e contêineres
 
