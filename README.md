@@ -1,0 +1,64 @@
+# WMS SaaS Backend
+
+API Java 21 / Spring Boot 4.0.6. A base atual implementa autenticação e autorização do WMS, com usuários, perfis `GESTOR`/`OPERADOR`, permissões por ação e migrações Flyway.
+
+A organização por módulos, baseada em `inatback/main`, e as orientações para continuar a implementação estão em [docs/ARQUITETURA.md](docs/ARQUITETURA.md). A base operacional já escrita foi distribuída nesses módulos; os fluxos logísticos ainda estão em desenvolvimento.
+
+A matriz por RN/RF e os contratos de autorização das rotas estão em [docs/AUTORIZACAO_WMS.md](docs/AUTORIZACAO_WMS.md).
+
+## Executar
+
+Configurar `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` e `JWT_SECRET` (ao menos 32 bytes UTF-8). O emissor pode ser definido por `JWT_ISSUER`; o padrão é `https://api.wmssaas.com`.
+
+A autenticação usa códigos enviados por e-mail. Configurar `MAIL_HOST`, `MAIL_PORT`, `MAIL_FROM` e, se necessário, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH=true` e `MAIL_STARTTLS_ENABLED=true`. O padrão local usa servidor SMTP em `localhost:1025`.
+
+```bash
+./mvnw spring-boot:run
+```
+
+`CORS_ALLOWED_ORIGINS` aceita uma lista separada por vírgulas; o padrão é `http://localhost:3000`. Para desenvolvimento web em HTTP, usar `REFRESH_COOKIE_SECURE=false`; o padrão é `true`.
+
+## Primeiro gestor
+
+O cadastro de usuários é administrativo (RF016); `/api/auth/register` exige um usuário com permissões de cadastro e atribuição de perfil.
+
+Para provisionar o primeiro gestor, definir `WMS_BOOTSTRAP_ENABLED=true`, `WMS_BOOTSTRAP_EMAIL`, `WMS_BOOTSTRAP_PASSWORD` e, opcionalmente, `WMS_BOOTSTRAP_NAME`. A senha é validada e armazenada com BCrypt. A conta inicia `INVITED` e confirma o e-mail pelo primeiro login. Se o e-mail já pertencer a uma conta legada, essa conta é promovida e sua senha é substituída pela configuração explícita. Se já existir um gestor, o bootstrap não modifica contas.
+
+Desabilitar o bootstrap e remover a senha de provisionamento da configuração após a criação.
+
+## Banco de desenvolvimento
+
+As migrations iniciais foram consolidadas para o desenvolvimento: V1 cria a autenticação completa, os perfis e as permissões; V2 cria as tabelas operacionais do WMS. Bancos novos aplicam ambas automaticamente. Hibernate usa `validate`.
+
+Um banco criado com as versões anteriores dessas migrations não é atualizado por esta baseline de desenvolvimento. Para executar a estrutura atual, provisionar uma base nova e vazia, conservando os dados antigos se ainda forem necessários. Não habilitar `FLYWAY_BASELINE_ON_MIGRATE` para pular a criação das tabelas de autenticação.
+
+Nenhuma base existente foi alterada durante este trabalho; os testes executam bancos próprios. A reorganização dos pacotes Java não altera essas migrations.
+
+## Contrato de login
+
+`POST /api/auth/login` passou a retornar 202 com um desafio, sem tokens. O cliente pede o código enviado por e-mail e chama `POST /api/auth/challenge/verify`; essa resposta contém o access token. `X-Client-Type: WEB` usa cookie HttpOnly para refresh, enquanto `MOBILE` retorna refresh no corpo.
+
+O contexto do usuário está em `GET /api/users/me`. Administração usa `/api/users`, `/api/profiles` e `/api/permissions`; detalhes e payloads estão na documentação de autorização.
+
+Os contratos de autorização dos módulos logísticos já estão definidos. Há modelos, repositórios e serviços operacionais em desenvolvimento, com controllers de cadastros. A integração HTTP dos demais fluxos e a validação completa das RNs/RFs ainda precisam ser concluídas; ver [estado e continuação](docs/ARQUITETURA.md#estado-desta-reorganização-e-continuação).
+
+## Verificação
+
+```bash
+./mvnw test
+./mvnw -DskipTests package
+```
+
+Os testes de integração cobrem a matriz de autorização com JWTs assinados, mudanças de conta/perfil/permissões, códigos de uso único, bloqueio, recuperação, fluxo web/mobile, migrations iniciais e persistência operacional. O teste MySQL de rotação concorrente usa Testcontainers e é ignorado automaticamente quando Docker não está disponível. SMTP é substituído por um sender de teste; a entrega real depende da configuração do ambiente.
+
+## Ambiente e contêineres
+
+Todas as propriedades do `application.yaml` usam variáveis de ambiente, listadas em [.env.example](.env.example). O Spring lê variáveis do processo; o arquivo `.env` não é carregado automaticamente na execução direta da JVM.
+
+Para Docker Compose, usar o `.env.example` da raiz `TCC_WMS`, ao lado do `docker-compose.yml`. O Compose encaminha todos os parâmetros ao `environment` do backend e monta a URL JDBC com `DB_HOST`, `DB_PORT` e `DB_NAME` quando `DB_URL` está vazio. Os valores existentes de JWT, banco e SMTP foram conservados.
+
+A imagem usa o Dockerfile centralizado em `../docker/backend/Dockerfile`, com este repositório como contexto, compilação Maven/Java 21 e execução com UID/GID `1001:1001`. O [.dockerignore](.dockerignore) envia apenas o POM e as fontes/recursos de produção.
+
+Imagem padrão: `ghcr.io/gabriellourenco1912/wms-saas-backend:latest`. `GHCR_NAMESPACE` e `IMAGE_TAG`, no `.env` da raiz, alteram o namespace e a versão. `SERVER_PORT` controla a porta interna e `BACKEND_PUBLISHED_PORT` a porta publicada no host.
+
+Consultar [docker/README.md](../docker/README.md) para configuração, build e comandos de pull/push das imagens do backend e do web.
