@@ -4,10 +4,12 @@ import dev.lourencogabriel.wmssaas.partner.dto.PartnerDtos;
 import dev.lourencogabriel.wmssaas.partner.model.Partner;
 import dev.lourencogabriel.wmssaas.partner.service.PartnerService;
 import dev.lourencogabriel.wmssaas.shared.api.PageResponse;
+import dev.lourencogabriel.wmssaas.shared.api.PageQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupOption;
 import dev.lourencogabriel.wmssaas.web.dto.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,10 +21,22 @@ import org.springframework.web.bind.annotation.*;
 public class PartnerController {
     private final PartnerService service;
 
-    @GetMapping("/partners")
+    @GetMapping({"/partners", "/search/partners"})
     @PreAuthorize("@wmsAuthorization.can(authentication, 'ORDER_VIEW')")
-    public ApiResponse<PageResponse<PartnerDtos.PartnerResponse>> partners(Pageable pageable) {
-        return new ApiResponse<>(PageResponse.from(service.partners(pageable).map(PartnerDtos.PartnerResponse::from)), "Partner list");
+    public ApiResponse<PageResponse<PartnerDtos.PartnerResponse>> partners(@Valid @ModelAttribute PageQuery query,
+            @RequestParam(required = false) String type, @RequestParam(required = false) String taxId,
+            @RequestParam(required = false) Boolean active) {
+        return new ApiResponse<>(PageResponse.from(service.partners(query, type, taxId, active)
+                .map(PartnerDtos.PartnerResponse::from)), "Partner list");
+    }
+
+    @GetMapping("/lookups/partners")
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'ORDER_VIEW')")
+    public ApiResponse<PageResponse<LookupOption>> partnerLookup(@Valid @ModelAttribute LookupQuery query,
+            @RequestParam(required = false) String type, @RequestParam(required = false) String taxId,
+            @RequestParam(defaultValue = "true") Boolean active) {
+        return new ApiResponse<>(PageResponse.from(service.partners(query, type, taxId, active)
+                .map(p -> new LookupOption(p.getId(), p.getLegalName()))), "Partner options");
     }
 
     @GetMapping("/partners/{id}")

@@ -3,15 +3,16 @@ package dev.lourencogabriel.wmssaas.partner.service;
 import dev.lourencogabriel.wmssaas.partner.model.Partner;
 import dev.lourencogabriel.wmssaas.partner.repository.PartnerRepository;
 import dev.lourencogabriel.wmssaas.partner.dto.PartnerDtos;
+import dev.lourencogabriel.wmssaas.shared.api.PageQuery;
+import dev.lourencogabriel.wmssaas.shared.persistence.SearchSpecifications;
 import dev.lourencogabriel.wmssaas.web.exception.BusinessRuleException;
 import dev.lourencogabriel.wmssaas.web.exception.ResourceNotFoundException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.*;
+import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -20,7 +21,12 @@ public class PartnerService {
     private final PartnerRepository partners;
     private final EntityManager em;
 
-    public Page<Partner> partners(Pageable p) { return partners.findAll(page(p)); }
+    public Page<Partner> partners(PageQuery query, String type, String taxId, Boolean active) {
+        return partners.findAll(SearchSpecifications.<Partner>text(query.getQ(), "id", "legalName", "taxId", "type")
+                .and(SearchSpecifications.equal("type", type))
+                .and(SearchSpecifications.equal("taxId", taxId))
+                .and(SearchSpecifications.equal("active", active)), query.toPageable());
+    }
 
     @Transactional
     public Partner partner(String id,PartnerDtos.PartnerRequest r) {
@@ -42,10 +48,6 @@ public class PartnerService {
         T found=em.find(type,id,LockModeType.PESSIMISTIC_WRITE);
         if(found==null)throw new ResourceNotFoundException(type.getSimpleName(),id);
         return found;
-    }
-
-    private static Pageable page(Pageable p) {
-        return PageRequest.of(Math.max(0,p.getPageNumber()),Math.min(200,p.getPageSize()),Sort.by("id"));
     }
 
     private static void require(boolean ok,String message) { if(!ok)throw new BusinessRuleException(message); }
