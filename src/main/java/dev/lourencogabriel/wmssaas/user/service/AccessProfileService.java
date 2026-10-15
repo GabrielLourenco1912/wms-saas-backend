@@ -4,6 +4,11 @@ import dev.lourencogabriel.wmssaas.auth.authorization.WmsPermission;
 import dev.lourencogabriel.wmssaas.auth.service.AccountSecurityService;
 import dev.lourencogabriel.wmssaas.user.dto.ProfileDtos;
 import dev.lourencogabriel.wmssaas.user.model.SystemRoleCode;
+import dev.lourencogabriel.wmssaas.user.model.AccessProfile;
+import dev.lourencogabriel.wmssaas.shared.api.PageResponse;
+import dev.lourencogabriel.wmssaas.shared.api.LookupOption;
+import dev.lourencogabriel.wmssaas.shared.persistence.SearchSpecifications;
+import org.springframework.data.domain.Pageable;
 import dev.lourencogabriel.wmssaas.user.repository.AccessProfileRepository;
 import dev.lourencogabriel.wmssaas.user.repository.UserRepository;
 import dev.lourencogabriel.wmssaas.web.exception.BusinessRuleException;
@@ -14,7 +19,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 @Service
@@ -30,8 +34,16 @@ public class AccessProfileService {
 
     @Transactional(readOnly = true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PROFILE_VIEW')")
-    public List<ProfileDtos.Response> findAll() {
-        return this.profileRepository.findAll().stream().map(ProfileDtos.Response::from).toList();
+    public PageResponse<ProfileDtos.Response> findAll(String q, Boolean active, Pageable pageable) {
+        var specification = SearchSpecifications.<AccessProfile>text(q, "code", "name")
+                .and(SearchSpecifications.equal("active", active));
+        return PageResponse.from(this.profileRepository.findAll(specification, pageable).map(ProfileDtos.Response::from));
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PROFILE_VIEW')")
+    public PageResponse<LookupOption> lookup(String q, Boolean active, Pageable pageable) {
+        return findAll(q, active, pageable).map(profile -> new LookupOption(profile.code(), profile.name()));
     }
 
     @Transactional(readOnly = true)

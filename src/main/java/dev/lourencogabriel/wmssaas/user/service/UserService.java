@@ -14,6 +14,10 @@ import dev.lourencogabriel.wmssaas.web.exception.BusinessRuleException;
 import dev.lourencogabriel.wmssaas.web.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import dev.lourencogabriel.wmssaas.shared.api.PageResponse;
+import dev.lourencogabriel.wmssaas.shared.api.LookupOption;
+import dev.lourencogabriel.wmssaas.shared.persistence.SearchSpecifications;
+import dev.lourencogabriel.wmssaas.user.model.User;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -42,7 +46,32 @@ public class UserService {
     @Transactional(readOnly = true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'USER_VIEW')")
     public PageResponse<UserResponse> findAll(Pageable pageable) {
-        return PageResponse.from(this.userRepository.findAll(pageable).map(UserResponse::from));
+        return findAll(null, null, null, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'USER_VIEW')")
+    public PageResponse<UserResponse> findAll(String q, String profileCode, UserAccountStatus status, Pageable pageable) {
+        return PageResponse.from(this.userRepository.findAll(filters(q, profileCode, status), pageable)
+                .map(UserResponse::from));
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'USER_VIEW')")
+    public PageResponse<LookupOption> lookup(String q, String profileCode, UserAccountStatus status, Pageable pageable) {
+        var specification = filters(q, profileCode, status);
+        if (status == UserAccountStatus.ACTIVE) {
+            specification = specification.and(SearchSpecifications.equal("profile.active", true))
+                    .and((root, query, cb) -> cb.isNotNull(root.get("emailVerifiedAt")));
+        }
+        return PageResponse.from(this.userRepository.findAll(specification, pageable)
+                .map(user -> new LookupOption(user.getUlid(), user.getName() + " (" + user.getEmail() + ")")));
+    }
+
+    private Specification<User> filters(String q, String profileCode, UserAccountStatus status) {
+        return SearchSpecifications.<User>text(q, "ulid", "name", "email", "profile.code", "profile.name")
+                .and(SearchSpecifications.equal("profile.code", profileCode))
+                .and(SearchSpecifications.equal("status", status));
     }
 
     @Transactional(readOnly = true)

@@ -12,7 +12,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
-public interface UserRepository extends JpaRepository<User, String> {
+public interface UserRepository extends JpaRepository<User, String>, JpaSpecificationExecutor<User> {
     @EntityGraph(attributePaths = {"profile", "profile.permissions"})
     User findByEmail(String email);
 
@@ -23,6 +23,10 @@ public interface UserRepository extends JpaRepository<User, String> {
     @Override
     @EntityGraph(attributePaths = "profile")
     Page<User> findAll(Pageable pageable);
+
+    @Override
+    @EntityGraph(attributePaths = "profile")
+    Page<User> findAll(org.springframework.data.jpa.domain.Specification<User> specification, Pageable pageable);
 
     boolean existsByEmail(String email);
     boolean existsByEmailAndUlidNot(String email, String id);
