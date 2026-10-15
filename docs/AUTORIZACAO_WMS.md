@@ -8,7 +8,7 @@ Esta documentação descreve o contrato de autenticação e autorização. O est
 
 A implementação na `main` reaproveita a autenticação da branch `auth` (`049ef93`) e conserva os pacotes `dev.lourencogabriel.wmssaas`. O domínio educacional, seus cadastros, organizações, pessoas, notificações e importações não fazem parte da adaptação.
 
-Estão implementados autenticação, contas, perfis e permissões. As rotas logísticas em `WmsEndpointPolicy` são **contratos de autorização**: a declaração da rota nessa matriz não implementa sua regra de negócio. Os módulos operacionais possuem código parcial, conforme [ARQUITETURA.md](ARQUITETURA.md). Os testes da matriz usam controllers exclusivos de teste onde não há rota de produção e verificam autorização, sem comprovar o funcionamento dos processos logísticos.
+Estão implementados autenticação, contas, perfis e permissões. As rotas logísticas em `WmsEndpointPolicy` são **contratos de autorização**: a declaração da rota nessa matriz não implementa sua regra de negócio. Os módulos operacionais possuem endpoints e testes de API, conforme [ARQUITETURA.md](ARQUITETURA.md). Os testes da matriz usam controllers exclusivos de teste onde não há rota de produção e verificam autorização, sem comprovar o funcionamento dos processos logísticos.
 
 ## Modelo de acesso
 
@@ -54,18 +54,18 @@ Os cadastros de categorias (`/api/categories`) usam `PRODUCT_VIEW/CREATE/EDIT`, 
 | RN | Regra de autorização aplicada |
 | --- | --- |
 | RN001 | Conta autenticada, ativa, e-mail verificado, perfil ativo; JWT válido; sessão invalidada quando a versão muda. |
-| RN002 | Livro de estoque disponível somente para consulta com `AUDIT_VIEW`. POST/PUT/PATCH/DELETE diretos não são liberados a nenhum perfil. Transações compensatórias devem ser criadas internamente pelos casos de uso autorizados. A imutabilidade no banco ainda pertence à implementação do módulo de estoque. |
+| RN002 | Livro de estoque disponível somente para consulta com `AUDIT_VIEW`. POST/PUT/PATCH/DELETE diretos não são liberados a nenhum perfil. Transações compensatórias devem ser criadas internamente pelos casos de uso autorizados. A imutabilidade é imposta também por gatilhos MySQL e foi verificada por testes SQL. |
 | RN003 | Somente `STOCK_BLOCK/UNBLOCK` permite bloqueio administrativo. Operadores podem reportar divergências; o bloqueio preventivo automático da RN009 pertence ao serviço de picking. |
 | RN004, RN005 | Putaway e transferência exigem suas permissões de execução; capacidade e atualização integrada de LPN continuam sendo validações do serviço logístico. |
-| RN006 | Conferência/contagem permitida ao operador; configuração de rastreio exige `PRODUCT_EDIT`. A obrigatoriedade de lote/validade deverá ser validada no respectivo serviço. |
+| RN006 | Conferência/contagem permitida ao operador; configuração de rastreio exige `PRODUCT_EDIT`. A obrigatoriedade de lote/validade é validada nos serviços de recebimento e reconciliação. |
 | RN007, RN013 | Geração de onda exige `WAVE_CREATE`; alocação, FEFO/FIFO e reserva são efeitos internos dessa ação. Não existe perfil público `SISTEMA` nem endpoint de reserva irrestrito. |
 | RN008 | Execução exige `PUTAWAY_EXECUTE` ou `PICKING_EXECUTE`. `TASK_QUANTITY_OVERRIDE` representa autorização administrativa de excesso; não elimina conferência, limites nem tratamento da divergência. |
 | RN009 | `PICKING_REPORT_DIVERGENCE` permite comunicar falta. Bloqueio preventivo, realocação e ajuste da tarefa são efeitos internos, sem conceder ao operador permissões administrativas de estoque. |
 | RN010 | `SHIPMENT_EXECUTE` permite conferência/expedição; atendimento integral do pedido é verificação obrigatória do serviço. |
-| RN011 | Cancelamento exige permissão específica de pedido/onda/tarefa; operador não pode cancelar planejamento. O serviço deverá preservar histórico e cancelar apenas tarefas elegíveis. |
+| RN011 | Cancelamento exige permissão específica de pedido/onda/tarefa; operador não pode cancelar planejamento. Os serviços preservam histórico e cancelam apenas tarefas elegíveis. |
 | RN012 | Permissões separadas por visualização, criação, edição, execução e cancelamento; filtragem HTTP mais segurança de métodos; rotas sem regra são negadas. |
-| RN014 | Permissão autoriza a ação; não autoriza qualquer transição de status. O futuro serviço de tarefas deverá validar origem/destino do status e vínculo da execução. |
-| RN015 | Permissão de execução não dispensa leitura de SKU, LPN ou posição, a ser validada no caso de uso operacional. |
+| RN014 | Permissão autoriza a ação; não autoriza qualquer transição de status. Os serviços validam origem/destino do status e vínculo da execução. |
+| RN015 | Permissão de execução não dispensa leitura de SKU, LPN ou posição, validada no caso de uso operacional. |
 | RN016 | Operador pode contar com `INVENTORY_EXECUTE`; ajuste manual exige `INVENTORY_ADJUST`. Ajustes automáticos da reconciliação devem ocorrer dentro da execução autorizada, sem edição do livro razão. |
 | RN017 | Somente gestor cria expectativa com `PRE_RECEIPT_CREATE`; operador confirma mercadoria com `RECEIPT_EXECUTE`. Permissão de pré-recebimento não concede conferência nem geração direta de saldo. |
 
@@ -116,3 +116,16 @@ public void completePicking(...) {
 ```
 
 A execução interna do motor ocorre a partir de uma ação já autorizada, sem receber um papel privilegiado informado pelo cliente. Validações de quantidade, lote, capacidade, estado, vínculo de tarefa e estoque bloqueado permanecem obrigatórias mesmo quando há permissão.
+
+## Contratos operacionais concluídos
+
+As famílias de recebimento, putaway, pedidos/ondas, picking/divergências, estoque,
+transferências, expedição, inventário, tarefas e auditoria possuem controllers de
+produção. A suíte verifica que toda rota `/api` publicada tem política explícita,
+além das exceções documentadas de autenticação e contexto do próprio usuário.
+
+Abertura e contagem de inventário exigem `INVENTORY_EXECUTE`; aplicação exige
+`INVENTORY_ADJUST`. Cancelamento aceita uma dessas permissões e, no serviço,
+limita a ação ao responsável ou ao usuário com autorização de ajuste. Rotas de
+saúde `GET /health` e `GET /health/ready` são públicas e expõem apenas o estado.
+Ver [OPERACOES.md](OPERACOES.md) para formatos e transporte da idempotência.

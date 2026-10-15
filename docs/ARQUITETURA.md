@@ -109,76 +109,44 @@ referência orienta a estrutura do código; as RNs, RFs e RNFs do WMS orientam o
 comportamento. Não é necessário introduzir microserviços, múltiplos projetos
 Maven ou um framework de módulos para manter esta organização.
 
-## Estado desta reorganização e continuação
+## Estado da implementação e validação
 
-Foram distribuídos os modelos e repositórios antes concentrados em `wms`, movidos
-os services/DTOs existentes para suas camadas e separados os cadastros por módulo.
-As entidades continuam com os mesmos nomes JPA e tabelas; as rotas e regras já
-escritas foram preservadas. A reorganização não exige uma migration adicional.
+Os módulos operacionais possuem controllers, DTOs, services e persistência:
+recebimento/conferência e putaway; saldos, bloqueios e transferências; pedidos,
+ondas, picking, divergências e expedição; inventário; tarefas e auditoria.
+A matriz [REQUISITOS.md](REQUISITOS.md) relaciona as 17 RN, 18 RF e 12 RNF ao código
+real e aos testes, sem atribuir ao backend os requisitos de interface Android.
 
-Na validação, foi corrigida a inicialização de `@Version` em `Stock` e
-`WarehouseTask`: ela permanece `null` até a primeira persistência, permitindo que
-o Spring Data identifique a entidade nova e o Hibernate preencha seu identificador
-na própria instância. Os campos e as colunas existentes foram mantidos.
+Operações críticas confirmam saldo, reserva, tarefa e histórico na mesma
+transação. `OperationService` serializa reenvios pelo ator e usa chave única,
+identidade/tipo e hash JSON canônico; objetos são ordenados recursivamente e a
+ordem dos arrays é preservada. Não alterar a canonicalização sem considerar as
+chaves já persistidas. Dados de desenvolvimento criados por versões anteriores
+do hash devem usar uma base nova ou novas chaves para novos comandos.
 
-O backend operacional está em desenvolvimento. Ter entidades e services no
-pacote não significa que o fluxo esteja concluído ou homologado. Recebimento,
-estoque e saída ainda têm integração HTTP pendente; inventário possui a base de
-persistência, sem o fluxo completo. A reorganização não conclui essas funções.
+A ordem de bloqueios é coordenada pelo núcleo de estoque. O bloqueio de armazém
+serializa alterações físicas dentro do armazém, e linhas lidas antes da espera
+são atualizadas antes de validar sua posição/estado. Essa escolha prioriza
+consistência; throughput e duração de ondas ainda precisam de medições de carga.
 
-### Entrega limitada: APIs de cadastro
+O inventário mantém snapshot e congela a posição até conclusão/cancelamento.
+Pedidos cancelados com mercadoria preparada exigem uma transferência física de
+retorno do LPN inteiro, com atualização da quantidade preparada e novo lançamento;
+não há retorno fictício por edição de saldo. Correções do livro acrescentam
+compensações. Mercadoria já despachada retorna por recebimento documental.
 
-A etapa seguinte à reorganização concentra-se nos cadastros de armazéns, zonas,
-posições, categorias, produtos, embalagens e parceiros. Categorias e parceiros
-passaram a ter as rotas incluídas na política de autorização. As criações usam
-HTTP 201 e as respostas dos controllers declaram os DTOs correspondentes.
+Em entidades com `@Version` gerado, a versão nasce `null` para que o Spring Data
+identifique a entidade nova e preencha seu identificador na própria instância.
+Migrations de desenvolvimento permanecem consolidadas em V1/V2. Nenhuma migration
+incremental foi acrescentada somente pela conclusão dos controllers/serviços.
 
-Os testes de integração desses módulos usam controllers reais, JWTs assinados,
-H2 e rollback por teste. Verificam persistência por chamadas HTTP, permissões,
-validação, duplicidades e regras de alteração de cadastros com estoque associado.
-São evidências específicas dos cadastros relacionados às RF003/RF004 e RN012;
-não constituem validação integral dessas regras ou dos fluxos de movimentação.
+A suíte possui 315 testes aprovados e nenhum ignorado na validação com Docker,
+com API real, JWTs, H2 e dois testes MySQL. Foram verificadas disputa por saldo e
+demanda, imutabilidade SQL do livro/histórico, idempotência, rollback, inventário,
+retorno e compensação. Backup/restauração também foram executados e conferidos
+em MySQL descartável pelo script `ops/verify-backup.sh`.
 
-Os próximos trabalhos permanecem delimitados:
-
-1. Fechar recebimento e putaway com controllers, autorização e testes que sigam
-   uma conferência até a armazenagem, incluindo reenvio e falhas transacionais.
-2. Integrar consultas e comandos de estoque, transferências, bloqueios e auditoria.
-3. Fechar ondas, picking, divergências, cancelamentos e expedição.
-4. Implementar contagem e reconciliação de inventário.
-5. Validar concorrência em MySQL, backup/restauração e desempenho; integrar os
-   clientes e registrar as evidências pendentes do artigo.
-
-As rotas de saúde continuam pendentes de classificação na política HTTP. Esta
-entrega não altera o esquema e não requer uma nova migration Flyway.
-
-Na continuação, implementar cada caso de uso completo dentro do módulo:
-
-1. Conferir a RN/RF e o contrato de permissão em `WmsEndpointPolicy`.
-2. Criar ou completar DTO, service e controller no módulo responsável.
-3. Integrar regras e efeitos transacionais com os serviços existentes.
-4. Confirmar que a rota e a segurança de métodos exigem a permissão correta.
-5. Testar a regra e suas falhas relevantes, incluindo concorrência/idempotência
-   onde houver disputa por saldo. Não usar apenas testes da matriz de permissões
-   como prova de que o processo logístico funciona.
-
-Os testes unitários acompanham o pacote do módulo em `src/test/java`. Testes
-entre módulos podem ficar em `integration`; `WmsDomainPersistenceTest` verifica
-a integração dos modelos, repositórios, mapeamento JPA e migrations.
-
-```bash
-./mvnw clean test
-```
-
-Testes MySQL que usam Testcontainers dependem de Docker. A execução com H2 valida
-o contexto e os mapeamentos, mas não comprova triggers MySQL, concorrência em
-produção, desempenho, restauração de backup ou homologação em armazém.
-
-Validação da reorganização em 15/10/2026: 209 testes encontrados, 208 executados
-sem falhas e 1 ignorado por indisponibilidade de acesso ao Docker
-(`TokenServiceConcurrencyIntegrationTest`). Foram exercitados o contexto Spring,
-o mapeamento JPA, as migrations, a persistência operacional e a matriz de segurança.
-
-Validação da entrega de cadastros: 248 testes registrados, 247 sem falhas e 1
-MySQL/Testcontainers ignorado; 23 testes novos exercitam APIs reais e 16 casos
-adicionais ampliam a matriz de permissões de categorias/parceiros.
+Os contratos HTTP estão em [OPERACOES.md](OPERACOES.md). Permanecem posteriores:
+integração dos clientes; Android/scanners; usabilidade; carga e prazo de feedback;
+implantação/supervisão e cron no servidor de destino; homologação em empresa.
+Os resultados atuais não demonstram SLA de produção nem tempo de leitura < 2 s.

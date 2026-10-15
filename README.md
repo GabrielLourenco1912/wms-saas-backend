@@ -1,8 +1,8 @@
 # WMS SaaS Backend
 
-API Java 21 / Spring Boot 4.0.6. A base atual implementa autenticação e autorização do WMS, com usuários, perfis `GESTOR`/`OPERADOR`, permissões por ação e migrações Flyway.
+API Java 21 / Spring Boot 4.0.6. Implementa autenticação, perfis/permissões, cadastros, pré-recebimento/conferência, putaway, estoque/transferências, ondas/picking, expedição e inventário, com transações, idempotência e histórico imutável.
 
-A organização por módulos, baseada em `inatback/main`, e as orientações para continuar a implementação estão em [docs/ARQUITETURA.md](docs/ARQUITETURA.md). A base operacional já escrita foi distribuída nesses módulos; os fluxos logísticos ainda estão em desenvolvimento.
+A organização por módulos, baseada em `inatback/main`, e as orientações para continuar a implementação estão em [docs/ARQUITETURA.md](docs/ARQUITETURA.md). Os módulos operacionais possuem controllers, DTOs, serviços e persistência. A rastreabilidade e os limites de validação estão em [docs/REQUISITOS.md](docs/REQUISITOS.md).
 
 A matriz por RN/RF e os contratos de autorização das rotas estão em [docs/AUTORIZACAO_WMS.md](docs/AUTORIZACAO_WMS.md).
 
@@ -34,13 +34,15 @@ Um banco criado com as versões anteriores dessas migrations não é atualizado 
 
 Nenhuma base existente foi alterada durante este trabalho; os testes executam bancos próprios. A reorganização dos pacotes Java não altera essas migrations.
 
+O Flyway instala quatro gatilhos MySQL que rejeitam UPDATE/DELETE no livro razão e no histórico. Em servidores com binary logging, executar as migrations com uma conta administrativa adequada, separada da conta da aplicação quando necessário, usando `SPRING_FLYWAY_URL`, `SPRING_FLYWAY_USER` e `SPRING_FLYWAY_PASSWORD`. Os testes MySQL usam essa separação; a conta da aplicação continua sem privilégios globais de administração.
+
 ## Contrato de login
 
 `POST /api/auth/login` passou a retornar 202 com um desafio, sem tokens. O cliente pede o código enviado por e-mail e chama `POST /api/auth/challenge/verify`; essa resposta contém o access token. `X-Client-Type: WEB` usa cookie HttpOnly para refresh, enquanto `MOBILE` retorna refresh no corpo.
 
 O contexto do usuário está em `GET /api/users/me`. Administração usa `/api/users`, `/api/profiles` e `/api/permissions`; detalhes e payloads estão na documentação de autorização.
 
-Os contratos de autorização dos módulos logísticos já estão definidos. Há modelos, repositórios e serviços operacionais em desenvolvimento, com controllers de cadastros. A integração HTTP dos demais fluxos e a validação completa das RNs/RFs ainda precisam ser concluídas; ver [estado e continuação](docs/ARQUITETURA.md#estado-desta-reorganização-e-continuação).
+Os contratos operacionais e exemplos de requisição estão em [docs/OPERACOES.md](docs/OPERACOES.md). A aceitação dos clientes web/mobile, as medições de desempenho e a implantação de produção permanecem como atividades posteriores; ver [rastreabilidade dos requisitos](docs/REQUISITOS.md).
 
 ## Cadastros disponíveis
 
@@ -64,11 +66,11 @@ As permissões são verificadas na política HTTP e nos métodos dos controllers
 ## Verificação
 
 ```bash
-./mvnw test
-./mvnw -DskipTests package
+./mvnw verify
+./ops/verify-backup.sh
 ```
 
-Os testes de integração cobrem a matriz de autorização com JWTs assinados, mudanças de conta/perfil/permissões, códigos de uso único, bloqueio, recuperação, fluxo web/mobile, migrations iniciais, persistência operacional e operações reais das APIs de cadastro. Os testes de cadastros usam H2, controllers de produção e JWTs assinados, sem rotas de apoio. O teste MySQL de rotação concorrente usa Testcontainers e é ignorado automaticamente quando Docker não está disponível. SMTP é substituído por um sender de teste nos testes que enviam e-mail; a entrega real depende da configuração do ambiente.
+A suíte validada contém 315 testes aprovados, sem testes ignorados, incluindo dois testes MySQL/Testcontainers executados com Docker. Os testes de integração cobrem a matriz de autorização com JWTs assinados, mudanças de conta/perfil/permissões, códigos de uso único, bloqueio, recuperação, fluxo web/mobile, migrations iniciais, persistência operacional e operações reais das APIs de cadastro. Os testes de cadastros usam H2, controllers de produção e JWTs assinados, sem rotas de apoio. Os testes MySQL de rotação concorrente e de estoque/imutabilidade usam Testcontainers e são ignorados automaticamente quando Docker não está disponível. Para repetir a validação completa, é necessário acesso ao Docker. SMTP é substituído por um sender de teste nos testes que enviam e-mail; a entrega real depende da configuração do ambiente.
 
 ## Ambiente e contêineres
 
@@ -81,3 +83,11 @@ A imagem usa o Dockerfile centralizado em `../docker/backend/Dockerfile`, com es
 Imagem padrão: `ghcr.io/gabriellourenco1912/wms-saas-backend:latest`. `GHCR_NAMESPACE` e `IMAGE_TAG`, no `.env` da raiz, alteram o namespace e a versão. `SERVER_PORT` controla a porta interna e `BACKEND_PUBLISHED_PORT` a porta publicada no host.
 
 Consultar [docker/README.md](../docker/README.md) para configuração, build e comandos de pull/push das imagens do backend e do web.
+
+## Backup e restauração
+
+[ops/mysql-backup.sh](ops/mysql-backup.sh) gera dump consistente e compactado, exige retenção de ao menos 30 dias e impede execuções simultâneas. [ops/mysql-restore.sh](ops/mysql-restore.sh) exige uma base de destino vazia e diferente da base operacional. Ambos leem `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` e `DB_NAME`; backup aceita `BACKUP_DIR`/`BACKUP_RETENTION_DAYS`, e restauração exige `RESTORE_DB_NAME`.
+
+O exemplo [ops/wms-backup.cron.example](ops/wms-backup.cron.example) programa uma execução diária. Instalar e monitorar esse agendamento faz parte da configuração do servidor de destino; nenhum cron de produção foi instalado por este trabalho.
+
+`./ops/verify-backup.sh` usa um contêiner MySQL 8.4 isolado, aplica V1/V2, executa os scripts reais e confere restauração de estrutura, dados e gatilho, retenção e rejeição de destinos inseguros. A verificação passou nesta entrega e remove seu contêiner ao terminar; não acessa a base configurada da aplicação.
