@@ -85,8 +85,8 @@ class ProductApiIntegrationTest {
         var packaging = packagingBody("GTIN-DRINK", "12");
         String packageId = createdId(postJson("/api/products/" + productId + "/packages", packaging));
         getJson("/api/products/" + productId + "/packages").andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].id").value(packageId))
-                .andExpect(jsonPath("$.data[0].conversionFactor").value(12));
+                .andExpect(jsonPath("$.data.content[0].id").value(packageId))
+                .andExpect(jsonPath("$.data.content[0].conversionFactor").value(12));
         packaging.put("barcode", "GTIN-DRINK-REVISED");
         putJson("/api/products/" + productId + "/packages/" + packageId, packaging)
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.barcode").value("GTIN-DRINK-REVISED"));

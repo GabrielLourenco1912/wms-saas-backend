@@ -5,16 +5,22 @@ import dev.lourencogabriel.wmssaas.product.repository.*;
 import dev.lourencogabriel.wmssaas.stock.model.Stock;
 import dev.lourencogabriel.wmssaas.stock.repository.StockRepository;
 import dev.lourencogabriel.wmssaas.product.dto.ProductDtos;
+import dev.lourencogabriel.wmssaas.shared.api.PageQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupOption;
+import dev.lourencogabriel.wmssaas.shared.persistence.SearchSpecifications;
+import org.springframework.data.jpa.domain.Specification;
 import dev.lourencogabriel.wmssaas.web.exception.BusinessRuleException;
 import dev.lourencogabriel.wmssaas.web.exception.ResourceNotFoundException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.*;
+import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -26,12 +32,55 @@ public class ProductService {
     private final StockRepository stocks;
     private final EntityManager em;
 
-    public Page<Category> categories(Pageable p) { return categories.findAll(page(p)); }
+    public Page<Category> categories(PageQuery query, Boolean active) {
+        return categories.findAll(SearchSpecifications.<Category>text(query.getQ(), "id", "name", "description")
+                .and(SearchSpecifications.equal("active", active)), query.toPageable());
+    }
 
-    public Page<Product> products(Pageable p) { return products.findAll(page(p)); }
+    public Page<Product> products(PageQuery query, String categoryId, String sku, String barcode,
+                                  Boolean lotControlled, Boolean expiryControlled, Boolean active) {
+        Specification<Product> text = SearchSpecifications.text(query.getQ(), "id", "sku", "name", "baseUnit");
+        if (query.getQ() != null && !query.getQ().isBlank()) {
+            text = text.or((root, criteria, builder) -> {
+                var subquery = criteria.subquery(String.class);
+                var packaging = subquery.from(ProductPackaging.class);
+                subquery.select(packaging.get("productId")).where(SearchSpecifications.<ProductPackaging>text(query.getQ(), "barcode")
+                        .toPredicate(packaging, criteria, builder));
+                return root.get("id").in(subquery);
+            });
+        }
+        var specification = text.and(SearchSpecifications.equal("categoryId", categoryId))
+                .and(SearchSpecifications.equal("sku", sku))
+                .and(SearchSpecifications.equal("lotControlled", lotControlled))
+                .and(SearchSpecifications.equal("expiryControlled", expiryControlled))
+                .and(SearchSpecifications.equal("active", active));
+        if (barcode != null && !barcode.isBlank()) {
+            specification = specification.and((root, criteria, builder) -> {
+                var subquery = criteria.subquery(String.class);
+                var packaging = subquery.from(ProductPackaging.class);
+                subquery.select(packaging.get("productId")).where(builder.equal(builder.lower(packaging.get("barcode")), barcode.trim().toLowerCase(Locale.ROOT)));
+                return root.get("id").in(subquery);
+            });
+        }
+        return products.findAll(specification, query.toPageable());
+    }
 
-    public List<ProductPackaging> packages(String productId) {
-        get(Product.class,productId);return packages.findByProductId(productId);
+    public Page<ProductPackaging> packages(PageQuery query, String productId, String type, String barcode, Boolean active) {
+        if (productId != null && !productId.isBlank()) get(Product.class, productId.trim());
+        return packages.findAll(SearchSpecifications.<ProductPackaging>text(query.getQ(), "id", "productId", "type", "barcode")
+                .and(SearchSpecifications.equal("productId", productId))
+                .and(SearchSpecifications.equal("type", type))
+                .and(SearchSpecifications.equal("barcode", barcode))
+                .and(SearchSpecifications.equal("active", active)), query.toPageable());
+    }
+
+    public Page<LookupOption> packageLookup(LookupQuery query, String productId, String type, String barcode, Boolean active) {
+        Page<ProductPackaging> page = packages(query, productId, type, barcode, active);
+        Set<String> productIds = page.getContent().stream().map(ProductPackaging::getProductId).collect(Collectors.toSet());
+        Map<String, String> skus = products.findAllById(productIds).stream().collect(Collectors.toMap(Product::getId, Product::getSku));
+        return page.map(packaging -> new LookupOption(packaging.getId(), skus.get(packaging.getProductId())
+                + " — " + packaging.getType() + " × " + packaging.getConversionFactor().stripTrailingZeros().toPlainString()
+                + (packaging.getBarcode() == null ? "" : " — " + packaging.getBarcode())));
     }
 
     @Transactional
@@ -80,10 +129,6 @@ public class ProductService {
         T found=em.find(type,id,LockModeType.PESSIMISTIC_WRITE);
         if(found==null)throw new ResourceNotFoundException(type.getSimpleName(),id);
         return found;
-    }
-
-    private static Pageable page(Pageable p) {
-        return PageRequest.of(Math.max(0,p.getPageNumber()),Math.min(200,p.getPageSize()),Sort.by("id"));
     }
 
     private static void require(boolean ok,String message) { if(!ok)throw new BusinessRuleException(message); }

@@ -5,14 +5,15 @@ import dev.lourencogabriel.wmssaas.product.dto.ProductDtos;
 import dev.lourencogabriel.wmssaas.product.service.ProductService;
 import dev.lourencogabriel.wmssaas.web.dto.ApiResponse;
 import dev.lourencogabriel.wmssaas.shared.api.PageResponse;
+import dev.lourencogabriel.wmssaas.shared.api.PageQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupOption;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api")
@@ -20,9 +21,20 @@ import java.util.List;
 public class ProductController {
     private final ProductService service;
 
-    @GetMapping("/categories")
+    @GetMapping({"/categories", "/search/categories"})
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PRODUCT_VIEW')")
-    public ApiResponse<PageResponse<ProductDtos.CategoryResponse>> categories(Pageable p) { return new ApiResponse<>(PageResponse.from(service.categories(p).map(ProductDtos.CategoryResponse::from)),"Category list"); }
+    public ApiResponse<PageResponse<ProductDtos.CategoryResponse>> categories(@Valid @ModelAttribute PageQuery query,
+            @RequestParam(required = false) Boolean active) {
+        return new ApiResponse<>(PageResponse.from(service.categories(query, active).map(ProductDtos.CategoryResponse::from)), "Category list");
+    }
+
+    @GetMapping("/lookups/categories")
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PRODUCT_VIEW')")
+    public ApiResponse<PageResponse<LookupOption>> categoryLookup(@Valid @ModelAttribute LookupQuery query,
+            @RequestParam(defaultValue = "true") Boolean active) {
+        return new ApiResponse<>(PageResponse.from(service.categories(query, active)
+                .map(c -> new LookupOption(c.getId(), c.getName()))), "Category options");
+    }
 
     @GetMapping("/categories/{id}")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PRODUCT_VIEW')")
@@ -39,9 +51,25 @@ public class ProductController {
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PRODUCT_EDIT')")
     public ApiResponse<ProductDtos.CategoryResponse> updateCategory(@PathVariable String id,@Valid @RequestBody ProductDtos.CategoryRequest body) { return new ApiResponse<>(ProductDtos.CategoryResponse.from(service.category(id,body)),"Category updated"); }
 
-    @GetMapping("/products")
+    @GetMapping({"/products", "/search/products"})
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PRODUCT_VIEW')")
-    public ApiResponse<PageResponse<ProductDtos.ProductResponse>> products(Pageable p) { return new ApiResponse<>(PageResponse.from(service.products(p).map(ProductDtos.ProductResponse::from)),"Product list"); }
+    public ApiResponse<PageResponse<ProductDtos.ProductResponse>> products(@Valid @ModelAttribute PageQuery query,
+            @RequestParam(required = false) String categoryId, @RequestParam(required = false) String sku,
+            @RequestParam(required = false) String barcode, @RequestParam(required = false) Boolean lotControlled,
+            @RequestParam(required = false) Boolean expiryControlled, @RequestParam(required = false) Boolean active) {
+        return new ApiResponse<>(PageResponse.from(service.products(query, categoryId, sku, barcode, lotControlled, expiryControlled, active)
+                .map(ProductDtos.ProductResponse::from)), "Product list");
+    }
+
+    @GetMapping("/lookups/products")
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PRODUCT_VIEW')")
+    public ApiResponse<PageResponse<LookupOption>> productLookup(@Valid @ModelAttribute LookupQuery query,
+            @RequestParam(required = false) String categoryId, @RequestParam(required = false) String sku,
+            @RequestParam(required = false) String barcode, @RequestParam(required = false) Boolean lotControlled,
+            @RequestParam(required = false) Boolean expiryControlled, @RequestParam(defaultValue = "true") Boolean active) {
+        return new ApiResponse<>(PageResponse.from(service.products(query, categoryId, sku, barcode, lotControlled, expiryControlled, active)
+                .map(p -> new LookupOption(p.getId(), p.getSku() + " — " + p.getName()))), "Product options");
+    }
 
     @GetMapping("/products/{id}")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PRODUCT_VIEW')")
@@ -60,7 +88,33 @@ public class ProductController {
 
     @GetMapping("/products/{productId}/packages")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PRODUCT_VIEW')")
-    public ApiResponse<List<ProductDtos.ProductPackagingResponse>> packages(@PathVariable String productId) { return new ApiResponse<>(service.packages(productId).stream().map(ProductDtos.ProductPackagingResponse::from).toList(),"Product packages"); }
+    public ApiResponse<PageResponse<ProductDtos.ProductPackagingResponse>> packages(@PathVariable String productId,
+            @Valid @ModelAttribute PageQuery query, @RequestParam(required = false) String type,
+            @RequestParam(required = false) String barcode, @RequestParam(required = false) Boolean active) {
+        return packagePage(query, productId, type, barcode, active);
+    }
+
+    @GetMapping("/search/product-packages")
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PRODUCT_VIEW')")
+    public ApiResponse<PageResponse<ProductDtos.ProductPackagingResponse>> packageSearch(@Valid @ModelAttribute PageQuery query,
+            @RequestParam(required = false) String productId, @RequestParam(required = false) String type,
+            @RequestParam(required = false) String barcode, @RequestParam(required = false) Boolean active) {
+        return packagePage(query, productId, type, barcode, active);
+    }
+
+    @GetMapping("/lookups/product-packages")
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PRODUCT_VIEW')")
+    public ApiResponse<PageResponse<LookupOption>> packageLookup(@Valid @ModelAttribute LookupQuery query,
+            @RequestParam(required = false) String productId, @RequestParam(required = false) String type,
+            @RequestParam(required = false) String barcode, @RequestParam(defaultValue = "true") Boolean active) {
+        return new ApiResponse<>(PageResponse.from(service.packageLookup(query, productId, type, barcode, active)), "Packaging options");
+    }
+
+    private ApiResponse<PageResponse<ProductDtos.ProductPackagingResponse>> packagePage(PageQuery query, String productId,
+            String type, String barcode, Boolean active) {
+        return new ApiResponse<>(PageResponse.from(service.packages(query, productId, type, barcode, active)
+                .map(ProductDtos.ProductPackagingResponse::from)), "Product packages");
+    }
 
     @PostMapping("/products/{productId}/packages")
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PRODUCT_CREATE')")
