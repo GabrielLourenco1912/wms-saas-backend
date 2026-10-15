@@ -1,6 +1,10 @@
 package dev.lourencogabriel.wmssaas.outbound.service;
 
 import dev.lourencogabriel.wmssaas.shared.api.PageResponse;
+import dev.lourencogabriel.wmssaas.shared.api.PageQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupOption;
+import dev.lourencogabriel.wmssaas.outbound.dto.OutboundFilters;
 import dev.lourencogabriel.wmssaas.web.exception.BusinessRuleException;
 import dev.lourencogabriel.wmssaas.web.exception.ResourceNotFoundException;
 import dev.lourencogabriel.wmssaas.order.model.OrderItem;
@@ -69,13 +73,21 @@ public class OutboundService {
     @Transactional(readOnly = true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'ORDER_VIEW')")
     public PageResponse<OrderResponse> orders(Pageable pageable, String warehouseId, String status) {
-        return PageResponse.from(orders.findAll((root, query, cb) -> {
-            var predicates = new ArrayList<jakarta.persistence.criteria.Predicate>();
-            predicates.add(cb.equal(root.get("type"), "SAIDA"));
-            if (warehouseId != null) predicates.add(cb.equal(root.get("warehouseId"), warehouseId));
-            if (status != null) predicates.add(cb.equal(root.get("status"), status));
-            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
-        }, page(pageable)).map(mapper::order));
+        return PageResponse.from(orders.findAll(OutboundSearchSpecifications.orders(null,
+                new OutboundFilters.Orders(warehouseId,status,null,null,null)),page(pageable)).map(mapper::order));
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'ORDER_VIEW')")
+    public PageResponse<OrderResponse> orders(PageQuery query, OutboundFilters.Orders filters) {
+        return PageResponse.from(orders.findAll(OutboundSearchSpecifications.orders(query.getQ(),filters),query.toPageable()).map(mapper::order));
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'ORDER_VIEW')")
+    public PageResponse<LookupOption> orderLookups(LookupQuery query, OutboundFilters.Orders filters) {
+        return PageResponse.from(orders.findAll(OutboundSearchSpecifications.orders(query.getQ(),filters),query.toPageable())
+                .map(order -> new LookupOption(order.getId(),(order.getDocumentNumber()==null||order.getDocumentNumber().isBlank()?order.getId():order.getDocumentNumber())+" — "+order.getStatus())));
     }
 
     @Transactional(readOnly = true)
@@ -150,12 +162,21 @@ public class OutboundService {
     @Transactional(readOnly = true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'WAVE_VIEW')")
     public PageResponse<WaveResponse> waves(Pageable pageable, String warehouseId, String status) {
-        return PageResponse.from(waves.findAll((root, query, cb) -> {
-            var predicates = new ArrayList<jakarta.persistence.criteria.Predicate>();
-            if (warehouseId != null) predicates.add(cb.equal(root.get("warehouseId"), warehouseId));
-            if (status != null) predicates.add(cb.equal(root.get("status"), status));
-            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
-        }, page(pageable)).map(mapper::wave));
+        return PageResponse.from(waves.findAll(OutboundSearchSpecifications.waves(null,
+                new OutboundFilters.Waves(warehouseId,status,null,null)),page(pageable)).map(mapper::wave));
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'WAVE_VIEW')")
+    public PageResponse<WaveResponse> waves(PageQuery query, OutboundFilters.Waves filters) {
+        return PageResponse.from(waves.findAll(OutboundSearchSpecifications.waves(query.getQ(),filters),query.toPageable()).map(mapper::wave));
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'WAVE_VIEW')")
+    public PageResponse<LookupOption> waveLookups(LookupQuery query, OutboundFilters.Waves filters) {
+        return PageResponse.from(waves.findAll(OutboundSearchSpecifications.waves(query.getQ(),filters),query.toPageable())
+                .map(wave -> new LookupOption(wave.getId(),wave.getCode()+" — "+wave.getStatus())));
     }
 
     @Transactional(readOnly = true)
@@ -461,7 +482,7 @@ public class OutboundService {
     }
 
     static Pageable page(Pageable pageable) {
-        return PageRequest.of(Math.max(0, pageable.getPageNumber()), Math.max(1, Math.min(200, pageable.getPageSize())), Sort.by("id"));
+        return PageRequest.of(Math.max(0, pageable.getPageNumber()), Math.max(1, Math.min(100, pageable.getPageSize())), Sort.by("id"));
     }
 
     static BusinessRuleException rule(String message) { return new BusinessRuleException(message); }

@@ -6,7 +6,10 @@ import dev.lourencogabriel.wmssaas.shared.api.PageResponse;
 import dev.lourencogabriel.wmssaas.web.dto.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Pageable;
+import dev.lourencogabriel.wmssaas.shared.api.PageQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupOption;
+import dev.lourencogabriel.wmssaas.outbound.dto.OutboundFilters;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import static dev.lourencogabriel.wmssaas.outbound.dto.OutboundDtos.*;
@@ -17,12 +20,18 @@ import static dev.lourencogabriel.wmssaas.outbound.dto.OutboundDtos.*;
 public class PickingController {
     private final PickingService service;
 
-    @GetMapping("/picking-tasks")
+    @GetMapping({"/picking-tasks", "/search/picking-tasks"})
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_VIEW')")
-    public ApiResponse<PageResponse<TaskResponse>> list(Pageable pageable,
-            @RequestParam(required = false) String status, @RequestParam(required = false) String assignedUserId,
-            @RequestParam(required = false) String orderId) {
-        return new ApiResponse<>(service.tasks(pageable, status, assignedUserId, orderId), "Tarefas de picking");
+    public ApiResponse<PageResponse<TaskResponse>> list(@Valid @ModelAttribute PageQuery query,
+            @ModelAttribute OutboundFilters.PickingTasks filters) {
+        return new ApiResponse<>(service.tasks(query, filters), "Consulta paginada");
+    }
+
+    @GetMapping("/lookups/picking-tasks")
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_VIEW')")
+    public ApiResponse<PageResponse<LookupOption>> lookup(@Valid @ModelAttribute LookupQuery query,
+            @ModelAttribute OutboundFilters.PickingTasks filters) {
+        return new ApiResponse<>(service.taskLookups(query, filters), "Opções de seleção");
     }
 
     @GetMapping("/picking-tasks/{id}")

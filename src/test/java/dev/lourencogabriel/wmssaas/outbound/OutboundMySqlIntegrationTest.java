@@ -55,7 +55,9 @@ import java.util.concurrent.*;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 /** Validates the real MySQL schema, row locks and Flyway-installed history triggers. */
 @SpringBootTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
@@ -121,6 +123,14 @@ class OutboundMySqlIntegrationTest {
         stock.setQuantity(new BigDecimal("20")); stock.setEntryAt(Instant.parse("2026-01-01T00:00:00Z")); stock = stocks.saveAndFlush(stock);
         String order = created("/api/orders", Map.of("warehouseId", warehouse.getId(), "partnerId", client.getId(),
                 "documentNumber", "MYSQL-SALE", "items", List.of(Map.of("productId", product.getId(), "quantity", 8))), manager).path("id").asText();
+        mvc.perform(get("/api/search/orders").header("Authorization",manager).param("q","mysql-sale")
+                .param("warehouseId",warehouse.getId()).param("documentNumber","MYSQL-SALE").param("productId",product.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].id").value(order));
+        mvc.perform(get("/api/lookups/orders").header("Authorization",manager).param("q","mysql-sale").param("warehouseId",warehouse.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.size").value(5))
+                .andExpect(jsonPath("$.data.content[0].id").value(order)).andExpect(jsonPath("$.data.content[0].label").isString())
+                .andExpect(jsonPath("$.data.content[0].items").doesNotExist());
         var firstWave = Map.of("warehouseId", warehouse.getId(), "code", "MYSQL-WAVE-A", "orderIds", List.of(order), "idempotencyKey", UUID.randomUUID().toString());
         var secondWave = Map.of("warehouseId", warehouse.getId(), "code", "MYSQL-WAVE-B", "orderIds", List.of(order), "idempotencyKey", UUID.randomUUID().toString());
         var statuses = concurrently(firstWave, manager, secondWave, secondManager);

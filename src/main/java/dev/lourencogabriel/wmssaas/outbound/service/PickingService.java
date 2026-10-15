@@ -1,6 +1,10 @@
 package dev.lourencogabriel.wmssaas.outbound.service;
 
 import dev.lourencogabriel.wmssaas.shared.api.PageResponse;
+import dev.lourencogabriel.wmssaas.shared.api.PageQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupOption;
+import dev.lourencogabriel.wmssaas.outbound.dto.OutboundFilters;
 import dev.lourencogabriel.wmssaas.web.exception.ResourceNotFoundException;
 import dev.lourencogabriel.wmssaas.product.model.Product;
 import dev.lourencogabriel.wmssaas.stock.model.Lpn;
@@ -55,14 +59,21 @@ public class PickingService {
     @Transactional(readOnly = true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_VIEW')")
     public PageResponse<TaskResponse> tasks(Pageable pageable, String status, String assignedUserId, String orderId) {
-        return PageResponse.from(tasks.findAll((root, query, cb) -> {
-            var predicates = new ArrayList<jakarta.persistence.criteria.Predicate>();
-            predicates.add(cb.equal(root.get("type"), "PICKING"));
-            if (status != null) predicates.add(cb.equal(root.get("status"), status));
-            if (assignedUserId != null) predicates.add(cb.equal(root.get("assignedUserId"), assignedUserId));
-            if (orderId != null) predicates.add(cb.equal(root.get("orderId"), orderId));
-            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
-        }, page(pageable)).map(mapper::task));
+        return PageResponse.from(tasks.findAll(OutboundSearchSpecifications.picking(null,
+                new OutboundFilters.PickingTasks(null,status,assignedUserId,orderId,null,null)),page(pageable)).map(mapper::task));
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_VIEW')")
+    public PageResponse<TaskResponse> tasks(PageQuery query, OutboundFilters.PickingTasks filters) {
+        return PageResponse.from(tasks.findAll(OutboundSearchSpecifications.picking(query.getQ(),filters),query.toPageable()).map(mapper::task));
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_VIEW')")
+    public PageResponse<LookupOption> taskLookups(LookupQuery query, OutboundFilters.PickingTasks filters) {
+        return PageResponse.from(tasks.findAll(OutboundSearchSpecifications.picking(query.getQ(),filters),query.toPageable())
+                .map(task -> new LookupOption(task.getId(),task.getType()+" — "+task.getStatus()+" — "+task.getId())));
     }
 
     @Transactional(readOnly = true)
@@ -247,7 +258,21 @@ public class PickingService {
     @Transactional(readOnly = true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_VIEW')")
     public PageResponse<DivergenceResponse> divergences(Pageable pageable, String status) {
-        return PageResponse.from((status == null ? divergences.findAll(page(pageable)) : divergences.findByStatus(status, page(pageable))).map(mapper::divergence));
+        return PageResponse.from(divergences.findAll(OutboundSearchSpecifications.divergences(null,
+                new OutboundFilters.Divergences(null,status,null,null,null)),page(pageable)).map(mapper::divergence));
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_VIEW')")
+    public PageResponse<DivergenceResponse> divergences(PageQuery query, OutboundFilters.Divergences filters) {
+        return PageResponse.from(divergences.findAll(OutboundSearchSpecifications.divergences(query.getQ(),filters),query.toPageable()).map(mapper::divergence));
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_VIEW')")
+    public PageResponse<LookupOption> divergenceLookups(LookupQuery query, OutboundFilters.Divergences filters) {
+        return PageResponse.from(divergences.findAll(OutboundSearchSpecifications.divergences(query.getQ(),filters),query.toPageable())
+                .map(divergence -> new LookupOption(divergence.getId(),divergence.getType()+" — "+divergence.getStatus()+" — "+divergence.getReason())));
     }
 
     @Transactional(readOnly = true)

@@ -4,6 +4,8 @@ import dev.lourencogabriel.wmssaas.audit.repository.StockTransactionRepository;
 import dev.lourencogabriel.wmssaas.auth.service.TokenService;
 import dev.lourencogabriel.wmssaas.order.repository.OrderItemRepository;
 import dev.lourencogabriel.wmssaas.order.repository.WarehouseOrderRepository;
+import dev.lourencogabriel.wmssaas.order.model.WarehouseOrder;
+import dev.lourencogabriel.wmssaas.order.model.OrderItem;
 import dev.lourencogabriel.wmssaas.outbound.repository.WaveRepository;
 import dev.lourencogabriel.wmssaas.partner.model.Partner;
 import dev.lourencogabriel.wmssaas.partner.repository.PartnerRepository;
@@ -145,6 +147,40 @@ class OutboundApiIntegrationTest {
     }
 
     @Test
+    void shouldSearchOrdersInTheDatabaseWithStablePagesAndCompactLookupOptions() throws Exception {
+        for (int index = 0; index < 21; index++) searchableOrder("SALE-" + String.format("%02d", index));
+        String literal = searchableOrder("SALE-%-LITERAL");
+        searchableOrder("SALE-X-LITERAL");
+        mvc.perform(get("/api/orders").header("Authorization", managerToken).param("warehouseId", warehouse.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.size").value(20))
+                .andExpect(jsonPath("$.data.content.length()").value(20)).andExpect(jsonPath("$.data.totalElements").value(23));
+        var first = data(mvc.perform(get("/api/search/orders").header("Authorization", managerToken)
+                .param("q", "sale-").param("size", "7").param("warehouseId", warehouse.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.content.length()").value(7)));
+        var second = data(mvc.perform(get("/api/search/orders").header("Authorization", managerToken)
+                .param("q", "SALE-").param("size", "7").param("page", "1").param("warehouseId", warehouse.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.content.length()").value(7)));
+        var firstIds = new ArrayList<String>(); first.path("content").forEach(item -> firstIds.add(item.path("id").asText()));
+        var secondIds = new ArrayList<String>(); second.path("content").forEach(item -> secondIds.add(item.path("id").asText()));
+        assertEquals(firstIds.stream().sorted().toList(), firstIds);
+        assertTrue(Collections.disjoint(firstIds, secondIds));
+        mvc.perform(get("/api/search/orders").header("Authorization", managerToken).param("q", "%")
+                .param("warehouseId", warehouse.getId())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1)).andExpect(jsonPath("$.data.content[0].id").value(literal));
+        mvc.perform(get("/api/search/orders").header("Authorization", managerToken).param("documentNumber", "SALE-03")
+                .param("partnerId", client.getId()).param("productId", product.getId()).param("status", "PENDENTE")
+                .param("warehouseId", warehouse.getId())).andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        mvc.perform(get("/api/lookups/orders").header("Authorization", managerToken).param("q", "sale-")
+                .param("warehouseId", warehouse.getId())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.size").value(5)).andExpect(jsonPath("$.data.content.length()").value(5))
+                .andExpect(jsonPath("$.data.content[0].id").isString()).andExpect(jsonPath("$.data.content[0].label").isString())
+                .andExpect(jsonPath("$.data.content[0].items").doesNotExist());
+        mvc.perform(get("/api/lookups/orders").header("Authorization", managerToken).param("size", "6"))
+                .andExpect(status().isBadRequest());
+        getJson("/api/lookups/orders", operatorToken).andExpect(status().isForbidden());
+    }
+
+    @Test
     void shouldAllocateFefoThenFifoAndReserveOnlyResidualDemand() throws Exception {
         var earlierEntry = stock(product, sourcePosition, "2", "2026-11-01", "2026-01-01T00:00:00Z");
         var laterEntry = stock(product, alternatePosition, "3", "2026-11-01", "2026-02-01T00:00:00Z");
@@ -169,6 +205,12 @@ class OutboundApiIntegrationTest {
         assertEquals(4, reservations.count());
         getJson("/api/waves/" + wave, managerToken).andExpect(status().isOk()).andExpect(jsonPath("$.data.tasks.length()").value(4));
         getJson("/api/waves?status=PENDENTE", managerToken).andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        mvc.perform(get("/api/search/waves").header("Authorization", managerToken).param("q", waves.findById(wave).orElseThrow().getCode().toLowerCase(Locale.ROOT))
+                .param("warehouseId", warehouse.getId()).param("orderId", order)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1));
+        mvc.perform(get("/api/lookups/picking-tasks").header("Authorization", operatorToken)
+                .param("warehouseId", warehouse.getId()).param("productId", product.getId()).param("waveId", wave))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(2));
         postJson("/api/waves", waveBody(List.of(order)), managerToken).andExpect(status().isUnprocessableContent());
         assertEquals(1, waves.count());
         assertEquals(4, tasks.count());
@@ -208,6 +250,9 @@ class OutboundApiIntegrationTest {
         assertNull(dispatched.getPositionId()); assertEquals("EXPEDIDO", dispatched.getStatus());
         getJson("/api/shipments/" + shipment, operatorToken).andExpect(status().isOk()).andExpect(jsonPath("$.data.items[0].status").value("EXPEDIDO"));
         getJson("/api/shipments?orderId=" + order, operatorToken).andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        mvc.perform(get("/api/lookups/shipments").header("Authorization", operatorToken).param("orderId", order)
+                .param("warehouseId", warehouse.getId()).param("dockPositionId", dock.getId()).param("status", "DESPACHADA"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.content[0].id").value(shipment));
     }
 
     @Test
@@ -237,6 +282,9 @@ class OutboundApiIntegrationTest {
         String divergenceId = response.path("divergence").path("id").asText();
         getJson("/api/divergences/" + divergenceId, operatorToken).andExpect(status().isOk()).andExpect(jsonPath("$.data.type").value("FALTA"));
         getJson("/api/divergences?status=ABERTA", operatorToken).andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        mvc.perform(get("/api/search/divergences").header("Authorization", operatorToken).param("q", "falta física")
+                .param("warehouseId", warehouse.getId()).param("taskId", task.getId()).param("stockId", source.getId()).param("type", "FALTA"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.content[0].id").value(divergenceId));
     }
 
     @Test
@@ -430,6 +478,15 @@ class OutboundApiIntegrationTest {
         var user = new User(profile, email, passwords.encode("outbound-password-123"));
         user.setProfile(profiles.findById(profile).orElseThrow()); user.setStatus(UserAccountStatus.ACTIVE);
         user.setEmailVerifiedAt(Instant.now()); return users.saveAndFlush(user);
+    }
+
+    private String searchableOrder(String documentNumber) {
+        var order = new WarehouseOrder(); order.setWarehouseId(warehouse.getId()); order.setPartnerId(client.getId());
+        order.setDocumentNumber(documentNumber); order.setType("SAIDA"); order.setStatus("PENDENTE"); order.setCreatedById(managerId);
+        order = orders.saveAndFlush(order);
+        var item = new OrderItem(); item.setOrderId(order.getId()); item.setProductId(product.getId()); item.setRequestedQuantity(BigDecimal.ONE);
+        items.saveAndFlush(item);
+        return order.getId();
     }
 
     private Position position(String code, String purpose) {

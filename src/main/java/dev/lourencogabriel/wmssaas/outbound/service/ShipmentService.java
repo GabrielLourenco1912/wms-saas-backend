@@ -1,6 +1,10 @@
 package dev.lourencogabriel.wmssaas.outbound.service;
 
 import dev.lourencogabriel.wmssaas.shared.api.PageResponse;
+import dev.lourencogabriel.wmssaas.shared.api.PageQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupQuery;
+import dev.lourencogabriel.wmssaas.shared.api.LookupOption;
+import dev.lourencogabriel.wmssaas.outbound.dto.OutboundFilters;
 import dev.lourencogabriel.wmssaas.web.exception.ResourceNotFoundException;
 import dev.lourencogabriel.wmssaas.order.model.OrderItem;
 import dev.lourencogabriel.wmssaas.outbound.model.Shipment;
@@ -50,12 +54,21 @@ public class ShipmentService {
     @Transactional(readOnly = true)
     @PreAuthorize("@wmsAuthorization.can(authentication, 'SHIPMENT_VIEW')")
     public PageResponse<ShipmentResponse> shipments(Pageable pageable, String orderId, String status) {
-        return PageResponse.from(shipments.findAll((root, query, cb) -> {
-            var predicates = new ArrayList<jakarta.persistence.criteria.Predicate>();
-            if (orderId != null) predicates.add(cb.equal(root.get("orderId"), orderId));
-            if (status != null) predicates.add(cb.equal(root.get("status"), status));
-            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
-        }, page(pageable)).map(mapper::shipment));
+        return PageResponse.from(shipments.findAll(OutboundSearchSpecifications.shipments(null,
+                new OutboundFilters.Shipments(null,status,orderId,null)),page(pageable)).map(mapper::shipment));
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'SHIPMENT_VIEW')")
+    public PageResponse<ShipmentResponse> shipments(PageQuery query, OutboundFilters.Shipments filters) {
+        return PageResponse.from(shipments.findAll(OutboundSearchSpecifications.shipments(query.getQ(),filters),query.toPageable()).map(mapper::shipment));
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'SHIPMENT_VIEW')")
+    public PageResponse<LookupOption> shipmentLookups(LookupQuery query, OutboundFilters.Shipments filters) {
+        return PageResponse.from(shipments.findAll(OutboundSearchSpecifications.shipments(query.getQ(),filters),query.toPageable())
+                .map(shipment -> new LookupOption(shipment.getId(),"EXPEDICAO — "+shipment.getStatus()+" — "+shipment.getId())));
     }
 
     @Transactional(readOnly = true)
