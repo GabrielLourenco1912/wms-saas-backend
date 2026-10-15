@@ -22,6 +22,7 @@ import dev.lourencogabriel.wmssaas.operation.service.OperationService;
 import dev.lourencogabriel.wmssaas.stock.service.StockMutationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,6 +53,7 @@ public class PickingService {
     private final StockMutationService stockMutation;
 
     @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_VIEW')")
     public PageResponse<TaskResponse> tasks(Pageable pageable, String status, String assignedUserId, String orderId) {
         return PageResponse.from(tasks.findAll((root, query, cb) -> {
             var predicates = new ArrayList<jakarta.persistence.criteria.Predicate>();
@@ -60,16 +62,18 @@ public class PickingService {
             if (assignedUserId != null) predicates.add(cb.equal(root.get("assignedUserId"), assignedUserId));
             if (orderId != null) predicates.add(cb.equal(root.get("orderId"), orderId));
             return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
-        }, pageable).map(mapper::task));
+        }, page(pageable)).map(mapper::task));
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_VIEW')")
     public TaskResponse task(String id) {
         var task = tasks.findById(id).orElseThrow(() -> new ResourceNotFoundException("Tarefa", id));
         if (!"PICKING".equals(task.getType())) throw rule("Tarefa não é de picking");
         return mapper.task(task);
     }
 
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_EXECUTE')")
     public TaskResponse start(String id, StartRequest request, String userId) {
         return operations.execute(request.idempotencyKey(), List.of(id, request), userId,
                 "INICIAR_PICKING", TaskResponse.class, operationId -> {
@@ -95,6 +99,7 @@ public class PickingService {
         });
     }
 
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_EXECUTE')")
     public TaskResponse complete(String id, PickingRequest request, String userId) {
         return operations.execute(request.idempotencyKey(), List.of(id, request), userId,
                 "CONCLUIR_PICKING", TaskResponse.class, operationId -> {
@@ -118,6 +123,7 @@ public class PickingService {
         });
     }
 
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_REPORT_DIVERGENCE')")
     public ShortageResponse shortage(String id, ShortageRequest request, String userId) {
         return operations.execute(request.idempotencyKey(), List.of(id, request), userId,
                 "DIVERGENCIA_PICKING", ShortageResponse.class, operationId -> {
@@ -239,12 +245,19 @@ public class PickingService {
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_VIEW')")
     public PageResponse<DivergenceResponse> divergences(Pageable pageable, String status) {
-        return PageResponse.from((status == null ? divergences.findAll(pageable) : divergences.findByStatus(status, pageable)).map(mapper::divergence));
+        return PageResponse.from((status == null ? divergences.findAll(page(pageable)) : divergences.findByStatus(status, page(pageable))).map(mapper::divergence));
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'PICKING_VIEW')")
     public DivergenceResponse divergence(String id) {
         return mapper.divergence(divergences.findById(id).orElseThrow(() -> new ResourceNotFoundException("Divergência", id)));
+    }
+
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'TASK_QUANTITY_OVERRIDE')")
+    public TaskResponse authorizeExcess(String id, ExcessRequest request, String userId) {
+        return outbound.authorizeExcess(id, request, userId);
     }
 }

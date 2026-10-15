@@ -31,6 +31,9 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,6 +67,7 @@ public class OutboundService {
     private final EntityManager entityManager;
 
     @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'ORDER_VIEW')")
     public PageResponse<OrderResponse> orders(Pageable pageable, String warehouseId, String status) {
         return PageResponse.from(orders.findAll((root, query, cb) -> {
             var predicates = new ArrayList<jakarta.persistence.criteria.Predicate>();
@@ -71,12 +75,14 @@ public class OutboundService {
             if (warehouseId != null) predicates.add(cb.equal(root.get("warehouseId"), warehouseId));
             if (status != null) predicates.add(cb.equal(root.get("status"), status));
             return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
-        }, pageable).map(mapper::order));
+        }, page(pageable)).map(mapper::order));
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'ORDER_VIEW')")
     public OrderResponse order(String id) { return mapper.order(requireOutboundOrder(id)); }
 
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'ORDER_CREATE')")
     public OrderResponse createOrder(OrderRequest request, String userId) {
         stockMutation.lockWarehouse(request.warehouseId());
         validateOrderRequest(request);
@@ -93,6 +99,7 @@ public class OutboundService {
         return mapper.order(order);
     }
 
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'ORDER_EDIT')")
     public OrderResponse updateOrder(String id, OrderRequest request) {
         var order = lockOrder(id);
         if (!order.getWarehouseId().equals(request.warehouseId()))
@@ -113,6 +120,7 @@ public class OutboundService {
         var partner = partners.findById(request.partnerId())
                 .orElseThrow(() -> new ResourceNotFoundException("Parceiro", request.partnerId()));
         if (!Boolean.TRUE.equals(partner.getActive())) throw rule("Parceiro inativo");
+        if (!Set.of("CLIENTE", "AMBOS").contains(partner.getType())) throw rule("O parceiro do pedido de saída deve ser cliente");
         if (request.items() == null || request.items().isEmpty()) throw rule("Informe os itens do pedido");
         for (var item : request.items()) {
             positive(item.quantity(), "Quantidade solicitada");
@@ -140,22 +148,25 @@ public class OutboundService {
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'WAVE_VIEW')")
     public PageResponse<WaveResponse> waves(Pageable pageable, String warehouseId, String status) {
         return PageResponse.from(waves.findAll((root, query, cb) -> {
             var predicates = new ArrayList<jakarta.persistence.criteria.Predicate>();
             if (warehouseId != null) predicates.add(cb.equal(root.get("warehouseId"), warehouseId));
             if (status != null) predicates.add(cb.equal(root.get("status"), status));
             return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
-        }, pageable).map(mapper::wave));
+        }, page(pageable)).map(mapper::wave));
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'WAVE_VIEW')")
     public WaveResponse wave(String id) { return mapper.wave(requireWave(id)); }
 
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'WAVE_CREATE')")
     public WaveResponse createWave(WaveRequest request, String userId) {
         return operations.execute(request.idempotencyKey(), request, userId, "GERAR_ONDA", WaveResponse.class, operationId -> {
             stockMutation.lockWarehouse(request.warehouseId());
-            if (waves.findByCode(request.code()).isPresent()) throw rule("Código de onda já utilizado");
+            if (waves.findByCode(request.code().strip()).isPresent()) throw rule("Código de onda já utilizado");
             if (request.orderIds() == null || request.orderIds().isEmpty()) throw rule("Selecione pedidos de saída");
             var orderIds = request.orderIds().stream().distinct().sorted().toList();
             var selected = orderIds.stream().map(id -> orders.lockById(id)
@@ -167,7 +178,7 @@ public class OutboundService {
             }
             var wave = new Wave();
             wave.setWarehouseId(request.warehouseId());
-            wave.setCode(request.code());
+            wave.setCode(request.code().strip());
             wave.setStatus("PENDENTE");
             wave.setCreatedById(userId);
             waves.saveAndFlush(wave);
@@ -198,8 +209,11 @@ public class OutboundService {
                                  int priority, String userId, String operationId) {
         var remaining = requested.min(demand(item)).max(BigDecimal.ZERO);
         var result = new ArrayList<WarehouseTask>();
+        if (!products.findById(item.getProductId()).map(product -> Boolean.TRUE.equals(product.getActive())).orElse(false))
+            throw rule("Produto inativo não pode gerar nova tarefa de picking");
         for (var candidate : stocks.findAllocationCandidates(order.getWarehouseId(), item.getProductId())) {
             if (remaining.signum() == 0) break;
+            if (candidate.getLpnId() == null) continue;
             var position = positions.findById(candidate.getPositionId()).orElseThrow();
             if (!"ARMAZENAGEM".equals(position.getPurpose())
                     || !Boolean.TRUE.equals(position.getActive())
@@ -246,8 +260,9 @@ public class OutboundService {
                 .subtract(item.getPickedQuantity()).subtract(reserved).max(BigDecimal.ZERO);
     }
 
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'ORDER_CANCEL')")
     public OrderResponse cancelOrder(String id, CancelRequest request, String userId) {
-        return operations.execute(request.idempotencyKey(), Map.of("id", id, "request", request), userId,
+        return operations.execute(request.idempotencyKey(), List.of(id, request), userId,
                 "CANCELAR_PEDIDO", OrderResponse.class, operationId -> {
             var order = lockOrder(id);
             requireOpen(order);
@@ -276,8 +291,9 @@ public class OutboundService {
         });
     }
 
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'WAVE_CANCEL')")
     public WaveResponse cancelWave(String id, CancelRequest request, String userId) {
-        return operations.execute(request.idempotencyKey(), Map.of("id", id, "request", request), userId,
+        return operations.execute(request.idempotencyKey(), List.of(id, request), userId,
                 "CANCELAR_ONDA", WaveResponse.class, operationId -> {
             var wave = requireWave(id);
             stockMutation.lockWarehouse(wave.getWarehouseId());
@@ -311,8 +327,9 @@ public class OutboundService {
             throw rule("Conclua ou trate as tarefas em execução antes de cancelar");
     }
 
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'TASK_QUANTITY_OVERRIDE')")
     public TaskResponse authorizeExcess(String taskId, ExcessRequest request, String userId) {
-        return operations.execute(request.idempotencyKey(), Map.of("id", taskId, "request", request), userId,
+        return operations.execute(request.idempotencyKey(), List.of(taskId, request), userId,
                 "AUTORIZAR_EXCESSO", TaskResponse.class, operationId -> {
             var task = lockPickingTask(taskId);
             if (!Set.of("PENDENTE", "EM_EXECUCAO").contains(task.getStatus())) throw rule("Tarefa já encerrada");
@@ -405,7 +422,8 @@ public class OutboundService {
         entry.setNewStatus(next);
         entry.setUserId(userId);
         entry.setOperationId(operationId);
-        entry.setReason(reason);
+        entry.setReason(reason == null ? null : reason.substring(0, Math.min(255, reason.length())));
+        entry.setRecordedAt(Instant.now());
         histories.save(entry);
     }
 
@@ -440,6 +458,10 @@ public class OutboundService {
     static String requiredReason(String reason) {
         if (reason == null || reason.isBlank() || reason.length() > 255) throw rule("Informe um motivo de até 255 caracteres");
         return reason.strip();
+    }
+
+    static Pageable page(Pageable pageable) {
+        return PageRequest.of(Math.max(0, pageable.getPageNumber()), Math.max(1, Math.min(200, pageable.getPageSize())), Sort.by("id"));
     }
 
     static BusinessRuleException rule(String message) { return new BusinessRuleException(message); }

@@ -20,6 +20,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,18 +48,21 @@ public class ShipmentService {
     private final EntityManager entityManager;
 
     @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'SHIPMENT_VIEW')")
     public PageResponse<ShipmentResponse> shipments(Pageable pageable, String orderId, String status) {
         return PageResponse.from(shipments.findAll((root, query, cb) -> {
             var predicates = new ArrayList<jakarta.persistence.criteria.Predicate>();
             if (orderId != null) predicates.add(cb.equal(root.get("orderId"), orderId));
             if (status != null) predicates.add(cb.equal(root.get("status"), status));
             return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
-        }, pageable).map(mapper::shipment));
+        }, page(pageable)).map(mapper::shipment));
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'SHIPMENT_VIEW')")
     public ShipmentResponse shipment(String id) { return mapper.shipment(requireShipment(id)); }
 
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'SHIPMENT_EXECUTE')")
     public ShipmentResponse prepare(ShipmentRequest request, String userId) {
         return operations.execute(request.idempotencyKey(), request, userId, "PREPARAR_EXPEDICAO", ShipmentResponse.class, operationId -> {
             var order = outbound.lockOrder(request.orderId());
@@ -111,6 +115,7 @@ public class ShipmentService {
         });
     }
 
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'SHIPMENT_EXECUTE')")
     public ShipmentResponse confirm(String id, ShipmentScanRequest request, String userId) {
         return operations.execute(request.idempotencyKey(), List.of(id, request), userId,
                 "CONFERIR_EXPEDICAO", ShipmentResponse.class, operationId -> {
@@ -145,6 +150,7 @@ public class ShipmentService {
         });
     }
 
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'SHIPMENT_EXECUTE')")
     public ShipmentResponse dispatch(String id, DispatchRequest request, String userId) {
         return operations.execute(request.idempotencyKey(), List.of(id, request), userId,
                 "DESPACHAR_EXPEDICAO", ShipmentResponse.class, operationId -> {
@@ -191,6 +197,7 @@ public class ShipmentService {
         });
     }
 
+    @PreAuthorize("@wmsAuthorization.can(authentication, 'ORDER_CANCEL')")
     public ShipmentResponse cancel(String id, CancelRequest request, String userId) {
         return operations.execute(request.idempotencyKey(), List.of(id, request), userId,
                 "CANCELAR_EXPEDICAO", ShipmentResponse.class, operationId -> {
