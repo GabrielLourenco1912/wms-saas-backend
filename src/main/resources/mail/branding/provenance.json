@@ -1,0 +1,21 @@
+{
+  "concept": "Precisão em movimento",
+  "signatureSource": {
+    "url": "https://lourencogabriel.dev/downloads/assinaturas-gabriel.zip",
+    "sha256": "f72616234073267549655055123c16d1a6566d8e0f9553346703cc4937539e3b",
+    "catalogueCount": 9,
+    "originalFilesCount": 146
+  },
+  "files": [
+    {
+      "file": "wms-icon.png",
+      "source": "icone/web/icon-192.png",
+      "sha256": "c9e2361d084f7d11cf2002babbe55eead15fbc03d4ae42e92a12c35182c51901"
+    },
+    {
+      "file": "author-monogram.png",
+      "source": "assinatura/selecionada/png/01-monograma-gl-light-mono.png",
+      "sha256": "46ef269c1e9028327dedec8c8055f12d6050570872a05ce3687b2d39e62639f2"
+    }
+  ]
+}

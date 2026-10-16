@@ -12,7 +12,7 @@ Para construir os clientes web e mobile, consulte o [guia de integração da API
 
 Configurar `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` e `JWT_SECRET` (ao menos 32 bytes UTF-8). O emissor pode ser definido por `JWT_ISSUER`; o padrão é `https://api.wmssaas.com`.
 
-A autenticação usa códigos enviados por e-mail. Configurar `MAIL_HOST`, `MAIL_PORT`, `MAIL_FROM` e, se necessário, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH=true` e `MAIL_STARTTLS_ENABLED=true`. O padrão local usa servidor SMTP em `localhost:1025`.
+A autenticação usa códigos enviados por e-mail. Os três fluxos compartilham templates com a identidade WMS SaaS; recursos, prévias locais e compatibilidade estão em [docs/IDENTIDADE_EMAILS.md](docs/IDENTIDADE_EMAILS.md). Configurar `MAIL_HOST`, `MAIL_PORT`, `MAIL_FROM` e, se necessário, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH=true` e `MAIL_STARTTLS_ENABLED=true`. O padrão local usa servidor SMTP em `localhost:1025`.
 
 ```bash
 ./mvnw spring-boot:run
@@ -74,7 +74,7 @@ As permissões são verificadas na política HTTP e nos métodos dos controllers
 ./ops/verify-backup.sh
 ```
 
-A suíte validada contém 447 testes aprovados, sem testes ignorados, incluindo dois testes MySQL/Testcontainers executados com Docker. Os testes de integração cobrem a matriz de autorização com JWTs assinados, mudanças de conta/perfil/permissões, códigos de uso único, bloqueio, recuperação, fluxo web/mobile, migrations iniciais, persistência operacional e operações reais das APIs de cadastro. Também cobrem paginação, pesquisa, filtros combinados e dropdowns dos 25 recursos. Os testes de cadastros usam H2, controllers de produção e JWTs assinados, sem rotas de apoio. Os testes MySQL de rotação concorrente e de estoque/imutabilidade usam Testcontainers e são ignorados automaticamente quando Docker não está disponível. Para repetir a validação completa, é necessário acesso ao Docker. SMTP é substituído por um sender de teste nos testes que enviam e-mail; a entrega real depende da configuração do ambiente.
+A suíte validada contém 452 testes aprovados, sem testes ignorados, incluindo dois testes MySQL/Testcontainers executados com Docker. Os testes de integração cobrem a matriz de autorização com JWTs assinados, mudanças de conta/perfil/permissões, códigos de uso único, bloqueio, recuperação, fluxo web/mobile, migrations iniciais, persistência operacional e operações reais das APIs de cadastro. Também cobrem paginação, pesquisa, filtros combinados e dropdowns dos 25 recursos. Os testes de cadastros usam H2, controllers de produção e JWTs assinados, sem rotas de apoio. Os testes MySQL de rotação concorrente e de estoque/imutabilidade usam Testcontainers e são ignorados automaticamente quando Docker não está disponível. Para repetir a validação completa, é necessário acesso ao Docker. SMTP é substituído por um sender de teste nos testes que enviam e-mail; a entrega real depende da configuração do ambiente.
 
 ## Ambiente e contêineres
 

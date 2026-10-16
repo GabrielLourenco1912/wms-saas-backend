@@ -10,11 +10,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.core.io.ClassPathResource;
 
+import java.util.Arrays;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
@@ -81,6 +84,44 @@ class SmtpEmailSenderTest {
         );
 
         assertNotNull(exception.getCause());
+    }
+
+    @Test
+    void shouldEmbedOriginalBrandImagesAndPreserveTextAlternative() throws Exception {
+        String html = "<p>Código 001234</p><img src=\"cid:wms-brand-icon\">"
+                + "<img src=\"cid:wms-author-monogram\">";
+        this.sender.send(new EmailMessage(
+                "learner@example.com", "Código de acesso", "Código 001234", html
+        ));
+        this.mimeMessage.saveChanges();
+
+        verify(this.mailSender).send(this.mimeMessage);
+        assertEquals("Código 001234", findContent(this.mimeMessage, "text/plain"));
+        assertEquals(html, findContent(this.mimeMessage, "text/html"));
+        assertTrue(containsMimeType(this.mimeMessage, "multipart/alternative"));
+        assertTrue(containsMimeType(this.mimeMessage, "multipart/related"));
+        for (EmailBrandAssets.InlineImage image : EmailBrandAssets.IMAGES) {
+            Part part = findInlineImage(this.mimeMessage, image.contentId());
+            assertNotNull(part);
+            assertTrue(part.isMimeType("image/png"));
+            assertEquals(Part.INLINE, part.getDisposition());
+            try (var expected = new ClassPathResource(image.resourcePath()).getInputStream();
+                 var actual = part.getInputStream()) {
+                assertArrayEquals(expected.readAllBytes(), actual.readAllBytes());
+            }
+        }
+    }
+
+    private Part findInlineImage(Part part, String contentId) throws Exception {
+        String[] ids = part.getHeader("Content-ID");
+        if (ids != null && Arrays.asList(ids).contains("<" + contentId + ">")) return part;
+        if (part.getContent() instanceof Multipart multipart) {
+            for (int index = 0; index < multipart.getCount(); index++) {
+                Part found = findInlineImage(multipart.getBodyPart(index), contentId);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private String findContent(Part part, String mimeType) throws Exception {

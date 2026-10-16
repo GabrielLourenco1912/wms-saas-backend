@@ -3,6 +3,7 @@ package dev.lourencogabriel.wmssaas.mail;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -53,6 +54,17 @@ public class SmtpEmailSender implements EmailSender {
                     message.textBody() == null ? "" : message.textBody(),
                     message.htmlBody() == null ? "" : message.htmlBody()
             );
+
+            for (EmailBrandAssets.InlineImage image : EmailBrandAssets.IMAGES) {
+                if (message.htmlBody() != null
+                        && message.htmlBody().contains("cid:" + image.contentId())) {
+                    helper.addInline(
+                            image.contentId(),
+                            new ClassPathResource(image.resourcePath()),
+                            "image/png"
+                    );
+                }
+            }
 
             this.mailSender.send(mimeMessage);
         } catch (MessagingException | MailException exception) {

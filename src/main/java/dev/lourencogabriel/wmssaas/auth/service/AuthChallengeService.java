@@ -6,6 +6,7 @@ import dev.lourencogabriel.wmssaas.auth.model.AuthChallenge;
 import dev.lourencogabriel.wmssaas.auth.model.AuthChallengePurpose;
 import dev.lourencogabriel.wmssaas.auth.repository.AuthChallengeRepository;
 import dev.lourencogabriel.wmssaas.mail.EmailMessage;
+import dev.lourencogabriel.wmssaas.mail.EmailBranding;
 import dev.lourencogabriel.wmssaas.mail.EmailSender;
 import dev.lourencogabriel.wmssaas.mail.EmailTemplateRenderer;
 import dev.lourencogabriel.wmssaas.shared.model.UserAccountStatus;
@@ -251,6 +252,9 @@ public class AuthChallengeService {
 
     private String body(User user, AuthChallengePurpose purpose, String code) {
         return """
+                %s — %s
+                %s
+
                 Olá, %s!
 
                 Use o código abaixo para %s:
@@ -259,11 +263,21 @@ public class AuthChallengeService {
 
                 O código expira em %d minutos e pode ser usado uma única vez.
                 Se você não solicitou este código, ignore esta mensagem.
+                Nunca compartilhe o código com outras pessoas.
+
+                %s %s
+                %s
                 """.formatted(
+                EmailBranding.NAME,
+                EmailBranding.DESCRIPTOR,
+                EmailBranding.TAGLINE,
                 user.getName(),
                 action(purpose),
                 code,
-                expirationMinutes()
+                expirationMinutes(),
+                EmailBranding.AUTHOR_LABEL,
+                EmailBranding.AUTHOR_NAME,
+                EmailBranding.PORTFOLIO
         );
     }
 
