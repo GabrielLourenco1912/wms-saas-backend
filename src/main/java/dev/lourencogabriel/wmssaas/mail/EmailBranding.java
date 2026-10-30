@@ -1,4 +1,4 @@
-// Gerado por ops/sync-email-branding.py.
+// Identidade visual WMS SaaS, mantida com os recursos de e-mail.
 package dev.lourencogabriel.wmssaas.mail;
 
 public final class EmailBranding {

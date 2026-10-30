@@ -60,7 +60,7 @@ Os itens abaixo apontam as operações do servidor. Menções a aplicativo, pain
 | ID | Requisito | Implementação atual | Evidência automatizada e pendência |
 | --- | --- | --- | --- |
 | RNF001 | Disponibilidade | Aplicação Spring Boot com configuração externa e endpoints de [saúde e prontidão][health-controller]. | [StockApiIntegrationTest][stock-test]: `missingKeysAndUnauthorizedLedgerWritesAreRejected` também consulta `/health` e `/health/ready`. Implantação, supervisão do processo, redundância e disponibilidade em produção não foram comprovadas; não há SLA medido. |
-| RNF002 | Backup diário e retenção | [mysql-backup.sh][backup] gera dump transacional compactado, valida gzip, evita execução sobreposta e exige retenção mínima de 30 dias; [mysql-restore.sh][restore] exige destino diferente e vazio. Há [exemplo de cron diário][backup-cron]. | O script `ops/verify-backup.sh` passou em MySQL 8.4 descartável: restauração de V1/V2, dados e gatilho, retenção e rejeição de destino ocupado/operacional. Instalação do cron, monitoramento e armazenamento das cópias no servidor de produção permanecem pendentes. |
+| RNF002 | Backup diário e retenção | O serviço [mysql-backup][backup] da infraestrutura gera dump transacional compactado, valida gzip, impede backup/restauração simultâneos e exige retenção mínima de 30 dias. O [cron][backup-cron] executa diariamente às 02h15 no fuso do host; a [restauração manual][restore] exige destino existente, diferente e vazio. | A integração em `docker/mysql-backup/tests/integration.sh` usa MySQL 8.0 descartável: restauração das migrations V1/V2, perfis, dados e gatilho, retenção de 30/45 dias, destinos protegidos, concorrência e execução real do cron. Implantação, monitoramento dos resultados e cópia externa em produção dependem do ambiente; não há observação de 30 dias corridos. |
 | RNF003 | Segurança das senhas | [SecurityConfig.passwordEncoder][security-config] configura BCrypt. Cadastro, alteração de credenciais e bootstrap usam o encoder; senha em texto claro não é persistida. | [InitialManagerBootstrapTest][bootstrap-test]: `shouldProvisionAnInvitedManagerWithoutPersistingThePlainPassword`; testes de autenticação, limite UTF-8 do BCrypt e reset em [WmsSecurityIntegrationTest][security-test]. Implementado no backend. |
 | RNF004 | Feedback de leitura em menos de 2 s | A API recebe identificadores e valida a operação correspondente. Não implementa captura/feedback visual Flutter nem garante prazo por código. | Testes de códigos e respostas funcionais não são medições de latência. Pendente medir dispositivo, rede, processamento e feedback completo do cliente em ambiente controlado. Não há resultado que comprove o limite de 2 s. |
 | RNF005 | Motor organizado e rastreável | Tarefas persistidas, histórico e [OperationService][operation-service] permitem confirmação idempotente e nova tentativa após falha sem duplicar efeitos confirmados. Erros transacionais desfazem efeitos parciais. | [InboundApiIntegrationTest][inbound-test], [OutboundApiIntegrationTest][outbound-test], [StockApiIntegrationTest][stock-test] e [InventoryApiIntegrationTest][inventory-test] cobrem reenvio/rollback; [OperationServiceTest][operation-test] cobre hash estável, identidade e conteúdo da solicitação. Não equivale a processamento offline ou disponibilidade contínua comprovada. |
@@ -77,7 +77,7 @@ Os itens abaixo apontam as operações do servidor. Menções a aplicativo, pain
 - A suíte padrão pode ser executada com `./mvnw clean test`. Consulte os relatórios em `target/surefire-reports`; uma contagem de testes não demonstra cobertura integral de um requisito.
 - Os testes de API usam dados controlados e autenticação real com JWT. Testes unitários, de persistência e de autorização têm objetivos diferentes; um endpoint de apoio de segurança não substitui a execução de um fluxo de negócio.
 - [OutboundMySqlIntegrationTest][mysql-test] verifica schema MySQL, concorrência e triggers do histórico. [TokenServiceConcurrencyIntegrationTest][token-concurrency-test] verifica rotação concorrente de refresh token. Ambos dependem de Docker/Testcontainers e podem ser ignorados quando indisponível. Um caso ignorado não é uma aprovação.
-- Evidências de backup/restauração devem registrar banco de origem/destino, resultado de importação e integridade recuperada. O exemplo de cron precisa ser instalado no ambiente de implantação; sua presença no repositório não demonstra execução diária.
+- Evidências de backup/restauração devem registrar banco de origem/destino, resultado de importação e integridade recuperada. O agendador do Compose precisa estar ativo no ambiente de implantação; o teste de cron descartável não demonstra operação diária em produção.
 - Os testes técnicos realizados não incluem pesquisa de campo, operação em armazém, aprovação de operadores ou homologação empresarial. Essas avaliações podem compor trabalhos futuros, conforme a delimitação acordada para o TCC.
 
 [v1]: ../src/main/resources/db/migration/V1__existing_authentication_schema.sql
@@ -119,9 +119,9 @@ Os itens abaixo apontam as operações do servidor. Menções a aplicativo, pain
 [health-controller]: ../src/main/java/dev/lourencogabriel/wmssaas/web/controller/HealthController.java
 [operation-service]: ../src/main/java/dev/lourencogabriel/wmssaas/operation/service/OperationService.java
 [request-logging]: ../src/main/java/dev/lourencogabriel/wmssaas/web/filter/OperationalRequestLoggingFilter.java
-[backup]: ../ops/mysql-backup.sh
-[restore]: ../ops/mysql-restore.sh
-[backup-cron]: ../ops/wms-backup.cron.example
+[backup]: ../../docker/mysql-backup/README.md
+[restore]: ../../docker/mysql-backup/README.md#restauração-manual
+[backup-cron]: ../../docker/mysql-backup/crontab
 [security-test]: ../src/test/java/dev/lourencogabriel/wmssaas/auth/authorization/WmsSecurityIntegrationTest.java
 [catalog-security-test]: ../src/test/java/dev/lourencogabriel/wmssaas/auth/authorization/CatalogAuthorizationIntegrationTest.java
 [persistence-test]: ../src/test/java/dev/lourencogabriel/wmssaas/integration/WmsDomainPersistenceTest.java

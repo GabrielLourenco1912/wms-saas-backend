@@ -1,5 +1,5 @@
 <#ftl output_format="HTML" auto_esc=true strip_whitespace=true>
-<#-- Gerado por ops/sync-email-branding.py. -->
+<#-- Tokens da identidade visual WMS SaaS, mantidos com os recursos de e-mail. -->
 <#assign ink="#14251E">
 <#assign primary="#176B48">
 <#assign accent="#D1F878">

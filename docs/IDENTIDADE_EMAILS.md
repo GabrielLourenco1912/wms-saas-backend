@@ -6,7 +6,7 @@ O cabeçalho apresenta **WMS SaaS — Gestão de armazéns**. A identificação 
 
 ## Fluxos e organização
 
-Confirmação de e-mail, autenticação em duas etapas e recuperação de senha compartilham `templates/mail/auth-challenge.ftlh` e `layout.ftlh`. `brand.ftlh` fornece os tokens gerados. Os títulos e as ações específicas continuam vindo de `AuthChallengeService`, assim como o código e a duração efetivamente configurada.
+Confirmação de e-mail, autenticação em duas etapas e recuperação de senha compartilham `templates/mail/auth-challenge.ftlh` e `layout.ftlh`. `brand.ftlh` fornece os tokens versionados. Os títulos e as ações específicas continuam vindo de `AuthChallengeService`, assim como o código e a duração efetivamente configurada.
 
 A mudança de apresentação não altera destinatários, geração/consumo de códigos, limites de tentativa, duração, tokens, endpoints ou regras de autenticação. A alternativa de texto simples ganhou identificação e crédito, mantendo o código isolado em sua linha, inclusive zeros à esquerda.
 
@@ -23,15 +23,17 @@ Os PNGs estão em `src/main/resources/mail/branding/`; `provenance.json` registr
 
 ## Atualização e prévias locais
 
-Na cópia completa do repositório, atualizar a especificação em `../docs-gerais/identidade-visual/` e executar:
+Os recursos da identidade já estão criados e versionados. Para ajustar a marca,
+edite `templates/mail/brand.ftlh`, as constantes em `EmailBranding.java` e,
+se necessário, as imagens em `mail/branding/`, atualizando a procedência e os
+hashes em `provenance.json`. Valide a renderização e o transporte:
 
 ```bash
-python3 ops/sync-email-branding.py
-python3 ops/sync-email-branding.py --check
 ./mvnw -Dtest=EmailTemplateRendererTest,SmtpEmailSenderTest,AuthChallengeServiceTest test
 ```
 
-O script gera tokens FreeMarker, constantes da alternativa textual e cópias verificadas das imagens. O JAR utiliza os recursos versionados e não depende da pasta local de documentação ou do Python em produção.
+O JAR utiliza os recursos versionados e não depende de um script de geração,
+da pasta local de documentação ou do Python em produção.
 
 Para produzir os três HTMLs de demonstração sem enviar e-mail:
 

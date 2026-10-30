@@ -71,7 +71,6 @@ As permissões são verificadas na política HTTP e nos métodos dos controllers
 
 ```bash
 ./mvnw verify
-./ops/verify-backup.sh
 ```
 
 A suíte validada contém 452 testes aprovados, sem testes ignorados, incluindo dois testes MySQL/Testcontainers executados com Docker. Os testes de integração cobrem a matriz de autorização com JWTs assinados, mudanças de conta/perfil/permissões, códigos de uso único, bloqueio, recuperação, fluxo web/mobile, migrations iniciais, persistência operacional e operações reais das APIs de cadastro. Também cobrem paginação, pesquisa, filtros combinados e dropdowns dos 25 recursos. Os testes de cadastros usam H2, controllers de produção e JWTs assinados, sem rotas de apoio. Os testes MySQL de rotação concorrente e de estoque/imutabilidade usam Testcontainers e são ignorados automaticamente quando Docker não está disponível. Para repetir a validação completa, é necessário acesso ao Docker. SMTP é substituído por um sender de teste nos testes que enviam e-mail; a entrega real depende da configuração do ambiente.
@@ -90,8 +89,8 @@ Consultar [docker/README.md](../docker/README.md) para configuração, build e c
 
 ## Backup e restauração
 
-[ops/mysql-backup.sh](ops/mysql-backup.sh) gera dump consistente e compactado, exige retenção de ao menos 30 dias e impede execuções simultâneas. [ops/mysql-restore.sh](ops/mysql-restore.sh) exige uma base de destino vazia e diferente da base operacional. Ambos leem `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` e `DB_NAME`; backup aceita `BACKUP_DIR`/`BACKUP_RETENTION_DAYS`, e restauração exige `RESTORE_DB_NAME`.
+Backup e restauração são mantidos na infraestrutura, em [docker/mysql-backup](../docker/mysql-backup/README.md). O serviço dedicado do Compose exporta MySQL 8.0 diariamente às 02h15 no fuso do host, com retenção mínima de 30 dias, trava compartilhada e publicação de arquivos compactados somente após validação. A restauração manual exige banco existente, vazio e diferente do operacional.
 
-O exemplo [ops/wms-backup.cron.example](ops/wms-backup.cron.example) programa uma execução diária. Instalar e monitorar esse agendamento faz parte da configuração do servidor de destino; nenhum cron de produção foi instalado por este trabalho.
+Na raiz da infraestrutura, execute `bash docker/mysql-backup/tests/integration.sh`. A suíte usa MySQL descartável sem o `.env` real ou o volume da aplicação, aplica as migrations V1/V2 e verifica recuperação de tabelas, perfis, dados e gatilho, além de retenção, destinos protegidos, concorrência e execução real do cron.
 
-`./ops/verify-backup.sh` usa um contêiner MySQL 8.4 isolado, aplica V1/V2, executa os scripts reais e confere restauração de estrutura, dados e gatilho, retenção e rejeição de destinos inseguros. A verificação passou nesta entrega e remove seu contêiner ao terminar; não acessa a base configurada da aplicação.
+As opções `MYSQL_BACKUP_*` e `MYSQL_RESTORE_*` ficam no `.env` da infraestrutura. Implantação, acompanhamento dos resultados e cópia externa dependem do ambiente de destino.

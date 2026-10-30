@@ -1,4 +1,0 @@
-# RNF002: daily backup, >= 30 days. Run under the service account, with MySQL client installed.
-# /etc/wms-backup.env contains DB_HOST/DB_PORT/DB_NAME/DB_USERNAME/DB_PASSWORD/BACKUP_DIR.
-# Keep this environment file readable only by the service account.
-15 2 * * * set -a; . /etc/wms-backup.env; set +a; /opt/wms/ops/mysql-backup.sh >> /var/log/wms-backup.log 2>&1

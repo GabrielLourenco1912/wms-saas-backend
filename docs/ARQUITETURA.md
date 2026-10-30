@@ -164,9 +164,10 @@ A suíte possui 447 testes aprovados e nenhum ignorado na validação com Docker
 com API real, JWTs, H2 e dois testes MySQL. Foram verificadas disputa por saldo e
 demanda, imutabilidade SQL do livro/histórico, idempotência, rollback, inventário,
 retorno e compensação. Backup/restauração também foram executados e conferidos
-em MySQL descartável pelo script `ops/verify-backup.sh`.
+em MySQL descartável. A verificação atual fica na infraestrutura, em
+`docker/mysql-backup/tests/integration.sh`, com migrations reais e cron.
 
 Os contratos HTTP estão em [OPERACOES.md](OPERACOES.md). Permanecem posteriores:
 integração dos clientes; Android/scanners; usabilidade; carga e prazo de feedback;
-implantação/supervisão e cron no servidor de destino; homologação em empresa.
+implantação/supervisão do agendador no servidor de destino; homologação em empresa.
 Os resultados atuais não demonstram SLA de produção nem tempo de leitura < 2 s.
