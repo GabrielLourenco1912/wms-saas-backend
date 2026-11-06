@@ -1,7 +1,7 @@
 # Dados sintéticos e isolamento da homologação
 
 A branch `homol` acrescenta um perfil Spring explícito e uma migration exclusiva
-para a aceitação técnica do TCC. A sequência de produção permanece V1/V2.
+para a aceitação técnica do TCC. As migrations comuns são V1/V2/V3; V3 amplia o resultado idempotente para ondas de até 200 pedidos. Nenhuma migration sintética integra o perfil de produção.
 
 `application-homol.yaml` inclui `classpath:db/homol` além das migrations comuns.
 Somente esse perfil descobre `V1000__homologation_synthetic_dataset.sql`. Antes de
@@ -26,13 +26,26 @@ Somente na base sintética, o operador também consulta pedidos e auditoria para
 exercitar seletores de expedição e leitura do histórico. As permissões de
 produção não são alteradas.
 
-`HomologationMigrationIntegrationTest` aplica V1/V2/V1000 em MySQL 8.0 descartável,
+`HomologationMigrationIntegrationTest` aplica V1/V2/V3/V1000 em MySQL 8.0 descartável,
 confere hashes/quantidades, proteção do livro e nova execução sem duplicar dados.
 Dez casos de `HomologationDatabaseGuardTest` verificam nomes permitidos e a recusa
 de catálogos de produção/ambíguos. Em 06/11/2026, `./mvnw verify` concluiu
-**463 testes sem falhas ou ignorados**, incluindo as três suítes MySQL/Docker.
+**464 testes sem falhas ou ignorados**, incluindo as três suítes MySQL/Docker.
 
 O Compose e a automação de aceitação pertencem à infraestrutura. Consulte
 [docker/HOMOLOGACAO.md](../../docker/HOMOLOGACAO.md) para os destinos, os testes
 web/Android, as medições e os artefatos. Os testes criam documentos novos por
 execução; não apagam livro razão nem usam o banco de produção.
+
+## Correção descoberta pelo ensaio de carga
+
+O primeiro ensaio revelou que uma resposta de onda com 200 tarefas excedia os
+65.535 bytes de `TEXT` no MySQL. V3 amplia `operacoes_wms.resultado` para
+`MEDIUMTEXT`, mantendo o resultado completo para replay idempotente. A regressão
+MySQL cria os 200 pedidos, confirma que a resposta excede o limite anterior e
+repete a chave, verificando 200 tarefas/reservas e saldo físico inalterado.
+
+O cálculo de reservas ativas passou a usar `SUM` no banco, preservando a subtração
+do consumido/liberado e a exclusão de reservas encerradas. O lock por armazém
+continua protegendo a consistência; as medições precisam registrar a espera das
+outras operações. A mudança permanece na branch `homol` até revisão/merge.

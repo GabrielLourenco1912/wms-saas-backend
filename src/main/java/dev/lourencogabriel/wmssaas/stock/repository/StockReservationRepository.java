@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import java.util.*;
+import java.math.BigDecimal;
 
 public interface StockReservationRepository extends JpaRepository<StockReservation, String>, JpaSpecificationExecutor<StockReservation> {
 
@@ -23,6 +24,9 @@ public interface StockReservationRepository extends JpaRepository<StockReservati
     List<StockReservation> findByStockId(String stockId);
 
     List<StockReservation> findByStockIdAndStatus(String stockId, String status);
+
+    @Query("select coalesce(sum(r.reservedQuantity - r.consumedQuantity - r.releasedQuantity), 0) from StockReservation r where r.stockId = :stockId and r.status = 'ATIVA'")
+    BigDecimal sumActiveRemainingByStockId(@Param("stockId") String stockId);
 
     List<StockReservation> findByOrderItemIdAndStatus(String orderItemId, String status);
 

@@ -44,7 +44,7 @@ Os itens abaixo apontam as operações do servidor. Menções a aplicativo, pain
 | RF005B | Conferir recebimento | [ReceiptController][receipt-controller] permite consultar e confirmar recebimentos; [InboundService.confirm][inbound-service] valida códigos, embalagem, quantidade, rastreio, LPN e capacidade atomicamente. | [InboundApiIntegrationTest][inbound-test]: confirmação idempotente, rastreio/códigos inválidos, excesso e rollback por capacidade. A bipagem no dispositivo depende do cliente. |
 | RF006 | Roteirizar armazenagem | [InboundService][inbound-service] procura posição compatível com a capacidade do LPN e gera tarefa de putaway; considera tarefas planejadas/em execução que ocupam a capacidade futura. | [InboundApiIntegrationTest][inbound-test]: `shouldRollBackAReceiptWhenTheWholeLpnCannotFitAnyStoragePosition`, `shouldAccountForStartedPutawayTasksWhenPlanningAdditionalReceipts`. Implementado na API; não é uma prova de otimização de rotas em campo. |
 | RF007 | Executar putaway | [PutawayController][putaway-controller] lista/detalha/inicia/conclui tarefas; o serviço confirma LPN e destino e movimenta todas as camadas do LPN. | [InboundApiIntegrationTest][inbound-test]: movimentação integral, preservação de rastreio e validação de estado, quantidade, códigos e capacidade na conclusão. A tela operacional não é exercitada. |
-| RF008 | Gerar ondas de separação | [WaveController][wave-controller] aciona [OutboundService.createWave][outbound-service] para agrupar pedidos e reservar/alocar demanda residual com FEFO/FIFO. | [OutboundApiIntegrationTest][outbound-test]: `shouldAllocateFefoThenFifoAndReserveOnlyResidualDemand` e disputa entre atores por saldo/demanda. Implementado na API; desempenho sob carga permanece pendente. |
+| RF008 | Gerar ondas de separação | [WaveController][wave-controller] aciona [OutboundService.createWave][outbound-service] para agrupar pedidos e reservar/alocar demanda residual com FEFO/FIFO. | [OutboundApiIntegrationTest][outbound-test]: `shouldAllocateFefoThenFifoAndReserveOnlyResidualDemand` e disputa entre atores por saldo/demanda. Implementado na API; o protocolo e a aceitação sintética estão em `tests/homol` na infraestrutura (branch homol). Resultados devem ser associados à execução, sem inferir capacidade de produção. |
 | RF009 | Executar picking | [PickingController][picking-controller] disponibiliza tarefas, início e conclusão com códigos, quantidade, reserva e movimentação para LPN de saída. | [OutboundApiIntegrationTest][outbound-test]: `shouldMovePickingInternallyAndDepleteStockExactlyOnceAtDispatch`, autorização de excesso, permissões e rollback. A navegação/orientação visual do aplicativo não é validada aqui. |
 | RF010 | Reportar divergência operacional | [PickingController][picking-controller] recebe a falta e [DivergenceController][divergence-controller] permite consultá-la; serviço registra, bloqueia e busca alocação alternativa. | [OutboundApiIntegrationTest][outbound-test]: falta parcial com realocação e ausência de saldo alternativo. Implementado na API. |
 | RF011 | Realizar transferências internas | [TransferController][transfer-controller] cria, consulta e confirma transferências parciais ou de LPN completo; preserva camada temporal e registra o movimento. | [StockApiIntegrationTest][stock-test]: `transfersEveryLayerOfAWholeLpnAndReplaysWithoutDuplicatingLedger`, `badScanRollsBackAndASplitTransferPreservesTheOriginalEntryLayer`. Implementado na API. |
@@ -148,3 +148,22 @@ resultados com filtros combinados, caracteres literais e escopo por armazém;
 o teste MySQL de saída também executa pesquisa e lookup pela API real.
 
 Validação executada: 447 testes aprovados, sem falhas, erros ou testes ignorados nos relatórios consolidados; testes MySQL foram executados com Docker e migrations administrativas separadas da conexão de aplicação. Backup/restauração validado pelo script real em contêiner descartável.
+
+
+## Homologação de novembro de 2026
+
+A branch `homol` fornece dados sintéticos isolados e proteção do nome do banco,
+conforme [HOMOLOGACAO.md](HOMOLOGACAO.md). A infraestrutura executa um ciclo
+Playwright/Flutter Android sobre Spring/MySQL/SMTP reais e cenários complementares
+na API. Os testes de camada acima continuam separados dessas evidências.
+
+A captura por câmera foi implementada no cliente Flutter em `develop`, integrada
+aos campos operacionais e coberta por testes de widget. O ensaio óptico e o
+feedback completo em Android físico permanecem manuais. A geração de ondas é
+medida pelo protocolo versionado da infraestrutura: 10/50/200 pedidos, dez
+repetições e operações concorrentes com atores distintos no mesmo armazém.
+
+A correção V3 permite armazenar o resultado idempotente de ondas de 200 pedidos,
+verificado por regressão em MySQL com replay e ausência de reservas duplicadas.
+A soma das reservas ativas é calculada no banco. Nenhuma alteração foi aplicada
+à branch main ou ao banco de produção nesta entrega.

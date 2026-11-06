@@ -100,6 +100,35 @@ class OutboundMySqlIntegrationTest {
     @Autowired TaskHistoryRepository history;
 
     @Test
+    void shouldPersistAndReplayAFullTwoHundredOrderWaveWithoutDuplicatingReservations() throws Exception {
+        String manager = token("mysql.large-wave@example.com", "GESTOR");
+        var warehouse = new Warehouse(); warehouse.setName("Large wave warehouse"); warehouse = warehouses.saveAndFlush(warehouse);
+        var zone = new Zone(); zone.setWarehouseId(warehouse.getId()); zone.setName("Large wave zone"); zone = zones.saveAndFlush(zone);
+        var position = new Position(); position.setZoneId(zone.getId()); position.setCode("MYSQL-LARGE-STORAGE"); position = positions.saveAndFlush(position);
+        var category = new Category(); category.setName("Large wave category"); category = categories.saveAndFlush(category);
+        var product = new Product(); product.setCategoryId(category.getId()); product.setSku("MYSQL-LARGE-SKU"); product.setName("Large wave product");
+        product.setLotControlled(false); product.setExpiryControlled(false); product = products.saveAndFlush(product);
+        var client = new Partner(); client.setLegalName("Large wave client"); client.setType("CLIENTE"); client = partners.saveAndFlush(client);
+        var lpn = new Lpn(); lpn.setTrackingCode("MYSQL-LARGE-LPN"); lpn.setPositionId(position.getId()); lpn.setStatus("ARMAZENADO"); lpn = lpns.saveAndFlush(lpn);
+        var stock = new Stock(); stock.setProductId(product.getId()); stock.setLpnId(lpn.getId()); stock.setPositionId(position.getId());
+        stock.setQuantity(new BigDecimal("1000")); stock.setEntryAt(Instant.now()); stock = stocks.saveAndFlush(stock);
+        var orderIds = new ArrayList<String>();
+        for (int index = 0; index < 200; index++) {
+            orderIds.add(created("/api/orders", Map.of("warehouseId", warehouse.getId(), "partnerId", client.getId(),
+                    "documentNumber", "MYSQL-LARGE-" + index, "items", List.of(Map.of("productId", product.getId(), "quantity", 1))), manager).path("id").asText());
+        }
+        var request = Map.of("warehouseId", warehouse.getId(), "code", "MYSQL-LARGE-WAVE", "orderIds", orderIds, "idempotencyKey", UUID.randomUUID().toString());
+        var original = created("/api/waves", request, manager);
+        assertEquals(200, original.path("tasks").size());
+        assertTrue(mapper.writeValueAsBytes(original).length > 65_535, "Regression must exercise MySQL TEXT's byte limit");
+        assertEquals(original, created("/api/waves", request, manager));
+        assertEquals(200, tasks.findByWaveId(original.path("id").asText()).size());
+        assertEquals(200, reservations.findByStockIdAndStatus(stock.getId(), "ATIVA").size());
+        assertEquals(0, new BigDecimal("200").compareTo(reservations.sumActiveRemainingByStockId(stock.getId())));
+        assertEquals(0, new BigDecimal("1000").compareTo(stocks.findById(stock.getId()).orElseThrow().getQuantity()));
+    }
+
+    @Test
     void shouldSerializeDifferentActorsAndRejectEverySqlMutationOfOperationalHistory() throws Exception {
         // A fresh container is the fixture; immutable history is never deleted for cleanup.
         try (var connection = Objects.requireNonNull(jdbc.getDataSource()).getConnection()) {

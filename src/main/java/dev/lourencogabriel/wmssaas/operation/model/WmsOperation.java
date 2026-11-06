@@ -38,7 +38,7 @@ public class WmsOperation extends BaseEntity {
     @Column(name = "concluido_em", nullable = true)
     private Instant completedAt;
 
-    @Column(name = "resultado", nullable = true, columnDefinition = "TEXT")
+    @Column(name = "resultado", nullable = true, columnDefinition = "MEDIUMTEXT")
     private String result;
 
 }

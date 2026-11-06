@@ -101,8 +101,9 @@ public class StockMutationService {
         return reservation.getReservedQuantity().subtract(reservation.getConsumedQuantity()).subtract(reservation.getReleasedQuantity());
     }
     public BigDecimal reserved(Stock stock) {
-        return reservations.findByStockIdAndStatus(stock.getId(), "ATIVA").stream().map(this::remaining)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // A large wave may already have thousands of reservations for this layer.
+        // Aggregate in SQL rather than loading that growing history for every item.
+        return reservations.sumActiveRemainingByStockId(stock.getId());
     }
     public boolean isBlocked(Stock stock) {
         if (stock.getBlockStatus() != null && !stock.getBlockStatus().isBlank()) return true;

@@ -47,7 +47,7 @@ class HomologationMigrationIntegrationTest {
         assertEquals(5, jdbc.queryForObject("SELECT COUNT(*) FROM estoque", Integer.class));
         assertEquals(5, jdbc.queryForObject("SELECT COUNT(*) FROM transacoes_estoque", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM tarefas", Integer.class));
-        assertEquals(3, jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success = TRUE", Integer.class));
+        assertEquals(4, jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success = TRUE", Integer.class));
         assertThrows(org.springframework.dao.DataAccessException.class,
                 () -> jdbc.update("DELETE FROM transacoes_estoque"));
         // Restart/validate must not rerun the dataset or duplicate its records.

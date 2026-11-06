@@ -10,19 +10,19 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Verifies the two initial development baselines, rather than a production upgrade chain. */
+/** Verifies a fresh schema and the upgrade from the authentication baseline. */
 class WmsAuthenticationMigrationTest {
     @Test
     void shouldCreateAuthenticationProfilesAndCompleteWarehouseDomainFromAnEmptyDatabase() {
         String url = databaseUrl();
         var flyway = Flyway.configure().dataSource(url, "sa", "").load();
-        assertEquals(2, flyway.migrate().migrationsExecuted);
+        assertEquals(3, flyway.migrate().migrationsExecuted);
         var jdbc = jdbc(url);
         assertEquals(2, jdbc.queryForObject("select count(*) from access_profiles", Integer.class));
         assertEquals(0, jdbc.queryForObject("select count(*) from users", Integer.class));
         assertEquals(0, jdbc.queryForObject("select count(*) from transacoes_estoque", Integer.class));
         assertEquals(0, jdbc.queryForObject("select count(*) from reservas_estoque", Integer.class));
-        assertEquals("2", flyway.info().current().getVersion().getVersion());
+        assertEquals("3", flyway.info().current().getVersion().getVersion());
         assertEquals(0, flyway.migrate().migrationsExecuted);
     }
 
@@ -39,8 +39,8 @@ class WmsAuthenticationMigrationTest {
         }
         var flyway = Flyway.configure().dataSource(url, "sa", "")
                 .baselineOnMigrate(true).baselineVersion("1").load();
-        assertEquals(1, flyway.migrate().migrationsExecuted);
-        assertEquals("2", flyway.info().current().getVersion().getVersion());
+        assertEquals(2, flyway.migrate().migrationsExecuted);
+        assertEquals("3", flyway.info().current().getVersion().getVersion());
         assertEquals(2, jdbc.queryForObject("select count(*) from access_profiles", Integer.class));
         assertEquals(0, jdbc.queryForObject("select count(*) from itens_inventario", Integer.class));
     }

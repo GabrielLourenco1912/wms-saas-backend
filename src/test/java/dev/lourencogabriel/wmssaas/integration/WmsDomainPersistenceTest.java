@@ -147,6 +147,10 @@ class WmsDomainPersistenceTest {
         assertEquals(stock.getId(), stored.getStockId());
         assertEquals(0, new BigDecimal("3").compareTo(stored.remainingQuantity()));
         assertEquals(1, reservations.findByStockIdAndStatus(stock.getId(), "ATIVA").size());
+        assertEquals(0, new BigDecimal("3").compareTo(reservations.sumActiveRemainingByStockId(stock.getId())));
+        stored.setStatus("ENCERRADA");
+        reservations.saveAndFlush(stored);
+        assertEquals(0, BigDecimal.ZERO.compareTo(reservations.sumActiveRemainingByStockId(stock.getId())));
         assertEquals(0, new BigDecimal("10").compareTo(stocks.findById(stock.getId()).orElseThrow().getQuantity()));
     }
 
