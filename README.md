@@ -73,7 +73,7 @@ As permissões são verificadas na política HTTP e nos métodos dos controllers
 ./mvnw verify
 ```
 
-A suíte validada contém 452 testes aprovados, sem testes ignorados, incluindo dois testes MySQL/Testcontainers executados com Docker. Os testes de integração cobrem a matriz de autorização com JWTs assinados, mudanças de conta/perfil/permissões, códigos de uso único, bloqueio, recuperação, fluxo web/mobile, migrations iniciais, persistência operacional e operações reais das APIs de cadastro. Também cobrem paginação, pesquisa, filtros combinados e dropdowns dos 25 recursos. Os testes de cadastros usam H2, controllers de produção e JWTs assinados, sem rotas de apoio. Os testes MySQL de rotação concorrente e de estoque/imutabilidade usam Testcontainers e são ignorados automaticamente quando Docker não está disponível. Para repetir a validação completa, é necessário acesso ao Docker. SMTP é substituído por um sender de teste nos testes que enviam e-mail; a entrega real depende da configuração do ambiente.
+A suíte validada contém 463 testes aprovados, sem testes ignorados, incluindo três testes MySQL/Testcontainers executados com Docker. Os testes de integração cobrem a matriz de autorização com JWTs assinados, mudanças de conta/perfil/permissões, códigos de uso único, bloqueio, recuperação, fluxo web/mobile, migrations iniciais, persistência operacional e operações reais das APIs de cadastro. Também cobrem paginação, pesquisa, filtros combinados e dropdowns dos 25 recursos. Os testes de cadastros usam H2, controllers de produção e JWTs assinados, sem rotas de apoio. Os testes MySQL de rotação concorrente e de estoque/imutabilidade usam Testcontainers e são ignorados automaticamente quando Docker não está disponível. Para repetir a validação completa, é necessário acesso ao Docker. SMTP é substituído por um sender de teste nos testes que enviam e-mail; a entrega real depende da configuração do ambiente.
 
 ## Ambiente e contêineres
 
@@ -94,3 +94,7 @@ Backup e restauração são mantidos na infraestrutura, em [docker/mysql-backup]
 Na raiz da infraestrutura, execute `bash docker/mysql-backup/tests/integration.sh`. A suíte usa MySQL descartável sem o `.env` real ou o volume da aplicação, aplica as migrations V1/V2 e verifica recuperação de tabelas, perfis, dados e gatilho, além de retenção, destinos protegidos, concorrência e execução real do cron.
 
 As opções `MYSQL_BACKUP_*` e `MYSQL_RESTORE_*` ficam no `.env` da infraestrutura. Implantação, acompanhamento dos resultados e cópia externa dependem do ambiente de destino.
+
+## Homologação e dados sintéticos
+
+A branch `homol` oferece perfil e migration exclusivos para a base de testes, com bloqueio de catálogos de produção, hashes de senha fornecidos pelo ambiente e histórico sintético consistente. Veja [docs/HOMOLOGACAO.md](docs/HOMOLOGACAO.md).

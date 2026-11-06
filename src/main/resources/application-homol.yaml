@@ -1,0 +1,7 @@
+# Only this explicit profile can discover the synthetic dataset migration.
+spring:
+  flyway:
+    locations: classpath:db/migration,classpath:db/homol
+    placeholders:
+      homol_manager_hash: ${HOMOL_MANAGER_PASSWORD_HASH}
+      homol_operator_hash: ${HOMOL_OPERATOR_PASSWORD_HASH}
