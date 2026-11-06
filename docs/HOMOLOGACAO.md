@@ -49,3 +49,11 @@ O cálculo de reservas ativas passou a usar `SUM` no banco, preservando a subtra
 do consumido/liberado e a exclusão de reservas encerradas. O lock por armazém
 continua protegendo a consistência; as medições precisam registrar a espera das
 outras operações. A mudança permanece na branch `homol` até revisão/merge.
+
+A geração de uma onda usa um contexto de alocação limitado à transação sob o
+lock do armazém. Candidatos FEFO/FIFO, locks e disponibilidade de cada saldo
+são carregados uma vez; cada reserva desconta o restante desse contexto antes
+do próximo item. Não há cache global ou compartilhado entre requisições. O
+flush final mantém a atomicidade, sem flush de todo o contexto a cada entidade.
+A regressão MySQL também exige que demandas concorrentes de vários pedidos,
+somadas às reservas existentes, não ultrapassem o saldo físico.

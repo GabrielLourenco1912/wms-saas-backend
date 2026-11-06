@@ -12,6 +12,7 @@ import dev.lourencogabriel.wmssaas.order.model.WarehouseOrder;
 import dev.lourencogabriel.wmssaas.outbound.model.Wave;
 import dev.lourencogabriel.wmssaas.outbound.model.WaveOrder;
 import dev.lourencogabriel.wmssaas.stock.model.StockReservation;
+import dev.lourencogabriel.wmssaas.stock.model.Stock;
 import dev.lourencogabriel.wmssaas.task.model.OperationalDivergence;
 import dev.lourencogabriel.wmssaas.task.model.TaskHistory;
 import dev.lourencogabriel.wmssaas.task.model.WarehouseTask;
@@ -203,6 +204,7 @@ public class OutboundService {
             wave.setStatus("PENDENTE");
             wave.setCreatedById(userId);
             waves.saveAndFlush(wave);
+            var batch = new AllocationBatch();
             int count = 0;
             for (var order : selected) {
                 var relation = new WaveOrder();
@@ -213,8 +215,8 @@ public class OutboundService {
                     var locked = items.lockById(item.getId()).orElseThrow();
                     var residual = demand(locked);
                     if (residual.signum() > 0) {
-                        count += allocate(order, locked, wave.getId(), residual, null, null,
-                                request.priority() == null ? 0 : request.priority(), userId, operationId).size();
+                        count += allocateBatch(order, locked, wave.getId(), residual, null, null,
+                                request.priority() == null ? 0 : request.priority(), userId, operationId, batch).size();
                     }
                 }
             }
@@ -228,19 +230,34 @@ public class OutboundService {
     List<WarehouseTask> allocate(WarehouseOrder order, OrderItem item, String waveId,
                                  BigDecimal requested, String excludedPositionId, String originTaskId,
                                  int priority, String userId, String operationId) {
-        var remaining = requested.min(demand(item)).max(BigDecimal.ZERO);
+        return allocateBatch(order, item, waveId, requested.min(demand(item)).max(BigDecimal.ZERO),
+                excludedPositionId, originTaskId, priority, userId, operationId, new AllocationBatch());
+    }
+
+    /** Scoped to one command under the warehouse lock; never reused across transactions. */
+    private static final class AllocationBatch {
+        final Map<String, List<Stock>> candidates = new HashMap<>();
+        final Map<String, Stock> locked = new HashMap<>();
+        final Map<String, BigDecimal> available = new HashMap<>();
+    }
+
+    private List<WarehouseTask> allocateBatch(WarehouseOrder order, OrderItem item, String waveId,
+                                 BigDecimal requested, String excludedPositionId, String originTaskId,
+                                 int priority, String userId, String operationId, AllocationBatch batch) {
+        var remaining = requested;
         var result = new ArrayList<WarehouseTask>();
         if (!products.findById(item.getProductId()).map(product -> Boolean.TRUE.equals(product.getActive())).orElse(false))
             throw rule("Produto inativo não pode gerar nova tarefa de picking");
-        for (var candidate : stocks.findAllocationCandidates(order.getWarehouseId(), item.getProductId())) {
+        for (var candidate : batch.candidates.computeIfAbsent(item.getProductId(),
+                productId -> stocks.findAllocationCandidates(order.getWarehouseId(), productId))) {
             if (remaining.signum() == 0) break;
             if (candidate.getLpnId() == null) continue;
             var position = positions.findById(candidate.getPositionId()).orElseThrow();
             if (!"ARMAZENAGEM".equals(position.getPurpose())
                     || !Boolean.TRUE.equals(position.getActive())
                     || Objects.equals(excludedPositionId, position.getId())) continue;
-            var stock = stockMutation.lockStock(candidate.getId());
-            var available = stockMutation.available(stock);
+            var stock = batch.locked.computeIfAbsent(candidate.getId(), stockMutation::lockStock);
+            var available = batch.available.computeIfAbsent(stock.getId(), ignored -> stockMutation.available(stock));
             if (available.signum() <= 0) continue;
             var quantity = remaining.min(available);
             var task = new WarehouseTask();
@@ -256,7 +273,7 @@ public class OutboundService {
             task.setLpnId(stock.getLpnId());
             task.setOriginTaskId(originTaskId);
             task.setTargetQuantity(quantity);
-            tasks.saveAndFlush(task);
+            tasks.save(task);
             var reservation = new StockReservation();
             reservation.setStockId(stock.getId());
             reservation.setTaskId(task.getId());
@@ -265,7 +282,8 @@ public class OutboundService {
             reservation.setConsumedQuantity(BigDecimal.ZERO);
             reservation.setReleasedQuantity(BigDecimal.ZERO);
             reservation.setStatus("ATIVA");
-            reservations.saveAndFlush(reservation);
+            reservations.save(reservation);
+            batch.available.put(stock.getId(), available.subtract(quantity));
             history(task, null, "PENDENTE", userId, operationId,
                     originTaskId == null ? "Alocação FEFO/FIFO" : "Realocação após falta física");
             result.add(task);

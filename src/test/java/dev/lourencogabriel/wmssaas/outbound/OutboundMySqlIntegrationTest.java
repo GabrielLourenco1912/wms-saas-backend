@@ -126,6 +126,19 @@ class OutboundMySqlIntegrationTest {
         assertEquals(200, reservations.findByStockIdAndStatus(stock.getId(), "ATIVA").size());
         assertEquals(0, new BigDecimal("200").compareTo(reservations.sumActiveRemainingByStockId(stock.getId())));
         assertEquals(0, new BigDecimal("1000").compareTo(stocks.findById(stock.getId()).orElseThrow().getQuantity()));
+
+        // The command-scoped availability must decrease for every item. Existing
+        // reservations and competing demands may never exceed the physical layer.
+        var competingOrders = new ArrayList<String>();
+        for (int index = 0; index < 3; index++) {
+            competingOrders.add(created("/api/orders", Map.of("warehouseId", warehouse.getId(), "partnerId", client.getId(),
+                    "documentNumber", "MYSQL-BATCH-" + index, "items", List.of(Map.of("productId", product.getId(), "quantity", 400))), manager).path("id").asText());
+        }
+        var constrained = created("/api/waves", Map.of("warehouseId", warehouse.getId(), "code", "MYSQL-CONSTRAINED-WAVE",
+                "orderIds", competingOrders, "idempotencyKey", UUID.randomUUID().toString()), manager);
+        assertEquals(2, constrained.path("tasks").size());
+        assertEquals(0, new BigDecimal("1000").compareTo(reservations.sumActiveRemainingByStockId(stock.getId())));
+        assertEquals(0, new BigDecimal("1000").compareTo(stocks.findById(stock.getId()).orElseThrow().getQuantity()));
     }
 
     @Test
